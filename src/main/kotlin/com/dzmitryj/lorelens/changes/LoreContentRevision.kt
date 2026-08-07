@@ -24,9 +24,7 @@ data class LoreRevisionNumber(val id: LoreRevisionId, val number: Long) : VcsRev
  * Content is fetched by writing it out to a temp file, because lore_file_write
  * is the verb that yields bytes -- lore_file_dump only reports sizes.
  *
- * Lore is content-addressed, so identical content across revisions shares a
- * cache entry. A Git-shaped integration has to key on (revision, path) and
- * invalidate conservatively; here the hash is the key.
+ * Revisions are immutable, so a cache entry never needs invalidating.
  */
 class LoreContentRevision(
     private val root: Path,
@@ -42,13 +40,11 @@ class LoreContentRevision(
     override fun getContentAsBytes(): ByteArray? {
         if (revision.id.isNone) return null
 
-        return try {
-            val hash = LoreStatusApi.hash(root, listOf(relativePath)).firstOrNull()?.hash
-            hash?.let { cache[it.hex] }?.let { return it }
+        val key = Key(root, relativePath, revision.id.hex)
+        cache[key]?.let { return it }
 
-            val content = fetch()
-            hash?.let { cache[it.hex] = content }
-            content
+        return try {
+            fetch().also { cache[key] = it }
         } catch (e: RuntimeException) {
             throw VcsException("Cannot read $relativePath at ${revision.asString()}", e)
         }
@@ -73,7 +69,9 @@ class LoreContentRevision(
         }
     }
 
+    private data class Key(val root: Path, val path: String, val revision: String)
+
     private companion object {
-        val cache: MutableMap<String, ByteArray> = ContainerUtil.createConcurrentSoftValueMap()
+        val cache: MutableMap<Key, ByteArray> = ContainerUtil.createConcurrentSoftValueMap()
     }
 }

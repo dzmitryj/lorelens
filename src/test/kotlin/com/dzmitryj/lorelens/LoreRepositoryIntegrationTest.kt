@@ -259,6 +259,34 @@ class LoreRepositoryIntegrationTest {
     }
 
     /**
+     * The content cache was keyed on the working tree's hash, which does not
+     * depend on the revision asked for, so every revision of a file collided on
+     * one entry and the second read returned the first one's bytes.
+     */
+    @Test
+    fun `content revisions of one file do not share a cache entry`() {
+        val path = repository.resolve("v.txt")
+        val filePath = LocalFilePath(path.toString(), false)
+
+        path.writeText("one")
+        LoreWriteApi.stage(repository, listOf("v.txt"))
+        LoreWriteApi.commit(repository, "add v")
+        val first = LoreStatusApi.status(repository, scan = true).revision!!
+
+        path.writeText("two")
+        LoreWriteApi.stage(repository, listOf("v.txt"))
+        LoreWriteApi.commit(repository, "change v")
+        val second = LoreStatusApi.status(repository, scan = true).revision!!
+
+        fun read(revision: LoreRevisionNumber) =
+            LoreContentRevision(repository, filePath, "v.txt", revision).contentAsBytes
+                ?.toString(Charsets.UTF_8)
+
+        assertEquals("one", read(LoreRevisionNumber(first.revision, first.revisionNumber)))
+        assertEquals("two", read(LoreRevisionNumber(second.revision, second.revisionNumber)))
+    }
+
+    /**
      * lore_file_diff is the only verb that yields patch text, and it can diff
      * two committed revisions without touching the working tree.
      */
