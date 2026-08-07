@@ -168,7 +168,9 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         val selected = table.selectedObjects
         return when (selected.size) {
             1 -> {
-                val row = table.selectedRow
+                // The table sorts as a view, so a parent lookup has to be done
+                // against the model, which stays in history order.
+                val row = table.convertRowIndexToModel(table.selectedRow)
                 val entry = model.items.getOrNull(row) ?: return null
                 val parent = LoreRevisionChain.parentOf(model.items, row)?.entry
                 entry.first to (parent to entry.entry)
