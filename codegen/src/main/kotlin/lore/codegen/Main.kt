@@ -18,6 +18,7 @@ fun main(args: Array<String>) {
         "LoreLayouts.kt" to LayoutEmitter(header, types).emit(),
         "LoreFunctions.kt" to FunctionEmitter(header, types).emit(),
         "LoreStatus.kt" to ErrorCodeEmitter(header.interfaceVersion, errorCodes).emit(),
+        "LoreEvents.kt" to EventEmitter(header, types).emit(),
     )
 
     files.forEach { (name, content) ->
