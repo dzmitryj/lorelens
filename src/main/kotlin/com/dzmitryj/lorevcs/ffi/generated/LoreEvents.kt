@@ -2049,8 +2049,13 @@ data class TraceLocation(
     val context: String,
 )
 
-data class Metadata(
-    val tag: Int,
+data class Address(
+    val hash: ByteArray,
+    val context: ByteArray,
+)
+
+data class Binary(
+    val length: Long,
 )
 
 data class BranchPoint(
@@ -2083,11 +2088,6 @@ data class BranchSwitchData(
     val latest_remote: ByteArray,
     val revision: ByteArray,
     val location: Int,
-)
-
-data class Address(
-    val hash: ByteArray,
-    val context: ByteArray,
 )
 
 data class FileResetCountData(
@@ -2162,6 +2162,30 @@ data class RevisionCommitCountData(
     val discovery_complete: Byte,
 )
 
+sealed interface Metadata {
+    data class Unknown(val tag: Int) : Metadata
+    data class AddressValue(val value: Address) : Metadata
+    data class BooleanValue(val value: Byte) : Metadata
+    data class BinaryValue(val value: Binary) : Metadata
+    data class ContextValue(val value: ByteArray) : Metadata
+    data class HashValue(val value: ByteArray) : Metadata
+    data class NumericValue(val value: Long) : Metadata
+    data class StringValue(val value: String) : Metadata
+}
+
+private fun readMetadata(struct: MemorySegment): Metadata =
+    when (lore_metadata_t.tag(struct)) {
+        0 -> Metadata.AddressValue(Address(hash = LoreCopy.fixedBytes(lore_hash_t.data(lore_address_t.hash(lore_metadata_t.union(struct).asSlice(0L, 48L)))), context = LoreCopy.fixedBytes(lore_context_t.data(lore_address_t.context(lore_metadata_t.union(struct).asSlice(0L, 48L))))))
+        1 -> Metadata.BooleanValue(lore_metadata_t.union(struct).get(ValueLayout.JAVA_BYTE, 0L))
+        2 -> Metadata.BinaryValue(Binary(length = lore_binary_t.length(lore_metadata_t.union(struct).asSlice(0L, 16L))))
+        3 -> Metadata.ContextValue(LoreCopy.fixedBytes(lore_context_t.data(lore_metadata_t.union(struct).asSlice(0L, 16L))))
+        4 -> Metadata.HashValue(LoreCopy.fixedBytes(lore_hash_t.data(lore_metadata_t.union(struct).asSlice(0L, 32L))))
+        5 -> Metadata.NumericValue(lore_metadata_t.union(struct).get(ValueLayout.JAVA_LONG, 0L))
+        6 -> Metadata.StringValue(LoreCopy.string(lore_metadata_t.union(struct).asSlice(0L, 16L)))
+        else -> Metadata.Unknown(lore_metadata_t.tag(struct))
+    }
+
+
 object LoreEventReader {
 
     fun read(event: MemorySegment): LoreEvent {
@@ -2170,7 +2194,7 @@ object LoreEventReader {
             0 -> ProgressEvent(_unused = lore_progress_event_data_t._unused(payload.asSlice(0L, lore_progress_event_data_t.SIZE)))
             1 -> ErrorEvent(error_type = lore_error_event_data_t.error_type(payload.asSlice(0L, lore_error_event_data_t.SIZE)), error_inner = LoreCopy.string(lore_error_event_data_t.error_inner(payload.asSlice(0L, lore_error_event_data_t.SIZE))))
             2 -> CompleteEvent(status = lore_complete_event_data_t.status(payload.asSlice(0L, lore_complete_event_data_t.SIZE)), error = ErrorDetail(error_code = lore_error_detail_t.error_code(lore_complete_event_data_t.error(payload.asSlice(0L, lore_complete_event_data_t.SIZE))), message = LoreCopy.string(lore_error_detail_t.message(lore_complete_event_data_t.error(payload.asSlice(0L, lore_complete_event_data_t.SIZE)))), trace_locations = LoreCopy.array(lore_error_detail_t.trace_locations(lore_complete_event_data_t.error(payload.asSlice(0L, lore_complete_event_data_t.SIZE))), 40L) { TraceLocation(file = LoreCopy.string(lore_trace_location_t.file(it)), line = lore_trace_location_t.line(it), column = lore_trace_location_t.column(it), context = LoreCopy.string(lore_trace_location_t.context(it))) }))
-            3 -> MetadataEvent(key = LoreCopy.string(lore_metadata_event_data_t.key(payload.asSlice(0L, lore_metadata_event_data_t.SIZE))), value = Metadata(tag = lore_metadata_t.tag(lore_metadata_event_data_t.value(payload.asSlice(0L, lore_metadata_event_data_t.SIZE)))))
+            3 -> MetadataEvent(key = LoreCopy.string(lore_metadata_event_data_t.key(payload.asSlice(0L, lore_metadata_event_data_t.SIZE))), value = readMetadata(lore_metadata_event_data_t.value(payload.asSlice(0L, lore_metadata_event_data_t.SIZE))))
             4 -> LogEvent(level = lore_log_event_data_t.level(payload.asSlice(0L, lore_log_event_data_t.SIZE)), category = lore_log_event_data_t.category(payload.asSlice(0L, lore_log_event_data_t.SIZE)), timestamp = lore_log_event_data_t.timestamp(payload.asSlice(0L, lore_log_event_data_t.SIZE)), location = LoreCopy.string(lore_log_event_data_t.location(payload.asSlice(0L, lore_log_event_data_t.SIZE))), message = LoreCopy.string(lore_log_event_data_t.message(payload.asSlice(0L, lore_log_event_data_t.SIZE))))
             5 -> EndEvent(unused = lore_end_event_data_t.unused(payload.asSlice(0L, lore_end_event_data_t.SIZE)))
             6 -> MaintenanceEvent(message = LoreCopy.string(lore_maintenance_event_data_t.message(payload.asSlice(0L, lore_maintenance_event_data_t.SIZE))))
@@ -2377,7 +2401,7 @@ object LoreEventReader {
             207 -> RevisionTreeModifyCompleteEvent(id = lore_revision_tree_modify_complete_event_data_t.id(payload.asSlice(0L, lore_revision_tree_modify_complete_event_data_t.SIZE)), node_id = lore_revision_tree_modify_complete_event_data_t.node_id(payload.asSlice(0L, lore_revision_tree_modify_complete_event_data_t.SIZE)), error_code = lore_revision_tree_modify_complete_event_data_t.error_code(payload.asSlice(0L, lore_revision_tree_modify_complete_event_data_t.SIZE)))
             208 -> RevisionTreeMoveCompleteEvent(id = lore_revision_tree_move_complete_event_data_t.id(payload.asSlice(0L, lore_revision_tree_move_complete_event_data_t.SIZE)), node_id = lore_revision_tree_move_complete_event_data_t.node_id(payload.asSlice(0L, lore_revision_tree_move_complete_event_data_t.SIZE)), error_code = lore_revision_tree_move_complete_event_data_t.error_code(payload.asSlice(0L, lore_revision_tree_move_complete_event_data_t.SIZE)))
             209 -> RevisionTreeMetadataSetCompleteEvent(id = lore_revision_tree_metadata_set_complete_event_data_t.id(payload.asSlice(0L, lore_revision_tree_metadata_set_complete_event_data_t.SIZE)), error_code = lore_revision_tree_metadata_set_complete_event_data_t.error_code(payload.asSlice(0L, lore_revision_tree_metadata_set_complete_event_data_t.SIZE)))
-            210 -> RevisionTreeMetadataGetCompleteEvent(id = lore_revision_tree_metadata_get_complete_event_data_t.id(payload.asSlice(0L, lore_revision_tree_metadata_get_complete_event_data_t.SIZE)), key = LoreCopy.string(lore_revision_tree_metadata_get_complete_event_data_t.key(payload.asSlice(0L, lore_revision_tree_metadata_get_complete_event_data_t.SIZE))), value = Metadata(tag = lore_metadata_t.tag(lore_revision_tree_metadata_get_complete_event_data_t.value(payload.asSlice(0L, lore_revision_tree_metadata_get_complete_event_data_t.SIZE)))), error_code = lore_revision_tree_metadata_get_complete_event_data_t.error_code(payload.asSlice(0L, lore_revision_tree_metadata_get_complete_event_data_t.SIZE)))
+            210 -> RevisionTreeMetadataGetCompleteEvent(id = lore_revision_tree_metadata_get_complete_event_data_t.id(payload.asSlice(0L, lore_revision_tree_metadata_get_complete_event_data_t.SIZE)), key = LoreCopy.string(lore_revision_tree_metadata_get_complete_event_data_t.key(payload.asSlice(0L, lore_revision_tree_metadata_get_complete_event_data_t.SIZE))), value = readMetadata(lore_revision_tree_metadata_get_complete_event_data_t.value(payload.asSlice(0L, lore_revision_tree_metadata_get_complete_event_data_t.SIZE))), error_code = lore_revision_tree_metadata_get_complete_event_data_t.error_code(payload.asSlice(0L, lore_revision_tree_metadata_get_complete_event_data_t.SIZE)))
             211 -> RevisionTreeCommitCompleteEvent(id = lore_revision_tree_commit_complete_event_data_t.id(payload.asSlice(0L, lore_revision_tree_commit_complete_event_data_t.SIZE)), revision_hash = LoreCopy.fixedBytes(lore_hash_t.data(lore_revision_tree_commit_complete_event_data_t.revision_hash(payload.asSlice(0L, lore_revision_tree_commit_complete_event_data_t.SIZE)))), new_tip_hash = LoreCopy.fixedBytes(lore_hash_t.data(lore_revision_tree_commit_complete_event_data_t.new_tip_hash(payload.asSlice(0L, lore_revision_tree_commit_complete_event_data_t.SIZE)))), error_code = lore_revision_tree_commit_complete_event_data_t.error_code(payload.asSlice(0L, lore_revision_tree_commit_complete_event_data_t.SIZE)))
             212 -> RevisionTreeCloseCompleteEvent(id = lore_revision_tree_close_complete_event_data_t.id(payload.asSlice(0L, lore_revision_tree_close_complete_event_data_t.SIZE)), error_code = lore_revision_tree_close_complete_event_data_t.error_code(payload.asSlice(0L, lore_revision_tree_close_complete_event_data_t.SIZE)))
             213 -> RevisionTreeListChildrenBeginEvent(id = lore_revision_tree_list_children_begin_event_data_t.id(payload.asSlice(0L, lore_revision_tree_list_children_begin_event_data_t.SIZE)), repository = LoreCopy.fixedBytes(lore_partition_t.data(lore_revision_tree_list_children_begin_event_data_t.repository(payload.asSlice(0L, lore_revision_tree_list_children_begin_event_data_t.SIZE)))), revision = LoreCopy.fixedBytes(lore_hash_t.data(lore_revision_tree_list_children_begin_event_data_t.revision(payload.asSlice(0L, lore_revision_tree_list_children_begin_event_data_t.SIZE)))), error_code = lore_revision_tree_list_children_begin_event_data_t.error_code(payload.asSlice(0L, lore_revision_tree_list_children_begin_event_data_t.SIZE)))
