@@ -29,6 +29,17 @@ dependencies {
 val pluginDisplayName = "Lore Version Control"
 val pinnedLoreVersion = providers.gradleProperty("loreVersion").get()
 val loreNativeDir = layout.buildDirectory.dir("lore-native/$pinnedLoreVersion")
+val loreServerDir = layout.buildDirectory.dir("lore-server/$pinnedLoreVersion")
+
+val hostPlatform = run {
+    val os = System.getProperty("os.name").lowercase()
+    val arm = System.getProperty("os.arch").lowercase() in setOf("aarch64", "arm64")
+    when {
+        os.startsWith("windows") -> "win-x64"
+        os.startsWith("mac") -> if (arm) "mac-arm64" else "mac-x64"
+        else -> if (arm) "linux-arm64" else "linux-x64"
+    }
+}
 
 val fetchLoreNative = tasks.register<FetchLoreNativeTask>("fetchLoreNative") {
     loreVersion = pinnedLoreVersion
@@ -36,14 +47,14 @@ val fetchLoreNative = tasks.register<FetchLoreNativeTask>("fetchLoreNative") {
     githubToken = providers.environmentVariable("GITHUB_TOKEN")
     downloadCache = gradle.gradleUserHomeDir.resolve("lore-native/$pinnedLoreVersion")
     outputDirectory = loreNativeDir
+    serverPlatform = hostPlatform
+    serverDirectory = loreServerDir
 }
 
 tasks.test {
     dependsOn(fetchLoreNative)
-    systemProperty(
-        "lore.native.dir",
-        loreNativeDir.get().asFile.absolutePath,
-    )
+    systemProperty("lore.native.dir", loreNativeDir.get().asFile.absolutePath)
+    systemProperty("lore.server.dir", loreServerDir.get().asFile.absolutePath)
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 

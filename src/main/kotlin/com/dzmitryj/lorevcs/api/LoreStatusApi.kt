@@ -23,6 +23,18 @@ import java.nio.file.Path
 private fun Byte.toBoolean(): Boolean = this.toInt() != 0
 
 /**
+ * Path conventions differ per verb and the header only documents one of them.
+ * Status takes repository-relative paths; the filesystem verbs (dirty, hash)
+ * resolve against the process working directory rather than
+ * globals.working_directory, so those need absolute paths.
+ */
+private fun absolute(root: Path, paths: List<String>): List<String> =
+    paths.map { path -> root.resolve(path).toString() }
+
+private fun relative(root: Path, path: String): String =
+    runCatching { root.relativize(Path.of(path)).toString().replace('\\', '/') }.getOrDefault(path)
+
+/**
  * Status, dirty-marking and content reads. Paths are repository-relative and
  * travel as native string arrays, so there is no argument-length ceiling to
  * work around.
@@ -44,6 +56,9 @@ object LoreStatusApi {
         val globals = args.globals(root)
         val options = arena.allocate(lore_repository_status_args_t.LAYOUT)
 
+        // Dirty flags are persisted in the staged state, so without this the
+        // report omits every file the IDE marked.
+        lore_repository_status_args_t.staged(options, 1)
         lore_repository_status_args_t.scan(options, if (scan) 1 else 0)
         lore_repository_status_args_t.check_dirty(options, if (checkDirty) 1 else 0)
         args.writeStrings(lore_repository_status_args_t.paths(options), paths)
@@ -68,7 +83,7 @@ object LoreStatusApi {
             val args = LoreArgs(arena)
             val globals = args.globals(root)
             val options = arena.allocate(lore_file_dirty_args_t.LAYOUT)
-            args.writeStrings(lore_file_dirty_args_t.paths(options), paths)
+            args.writeStrings(lore_file_dirty_args_t.paths(options), absolute(root, paths))
 
             LoreClient.require(
                 EventPump.call(arena) { callback ->
@@ -86,14 +101,16 @@ object LoreStatusApi {
             val args = LoreArgs(arena)
             val globals = args.globals(root)
             val options = arena.allocate(lore_file_hash_args_t.LAYOUT)
-            args.writeStrings(lore_file_hash_args_t.paths(options), paths)
+            args.writeStrings(lore_file_hash_args_t.paths(options), absolute(root, paths))
 
             LoreClient.require(
                 EventPump.call(arena) { callback ->
                     LoreFunctions.lore_file_hash.invokeExact(globals, options, callback) as Int
                 },
                 "hash",
-            ).filter<FileHashEvent>().map { LoreFileHash(it.path, it.size, LoreRevisionId(it.hash)) }
+            ).filter<FileHashEvent>().map {
+                LoreFileHash(relative(root, it.path), it.size, LoreRevisionId(it.hash))
+            }
         }
     }
 

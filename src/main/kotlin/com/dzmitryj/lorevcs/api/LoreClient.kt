@@ -4,8 +4,10 @@ import com.dzmitryj.lorevcs.ffi.EventPump
 import com.dzmitryj.lorevcs.ffi.LoreArgs
 import com.dzmitryj.lorevcs.ffi.LoreCallException
 import com.dzmitryj.lorevcs.ffi.LoreResult
+import com.dzmitryj.lorevcs.ffi.generated.ErrorEvent
 import com.dzmitryj.lorevcs.ffi.generated.LoreBuildInfo
 import com.dzmitryj.lorevcs.ffi.generated.LoreFunctions
+import com.dzmitryj.lorevcs.ffi.generated.lore_repository_create_args_t
 import com.dzmitryj.lorevcs.ffi.generated.lore_repository_info_args_t
 import java.lang.foreign.Arena
 import java.lang.foreign.MemorySegment
@@ -51,11 +53,35 @@ object LoreClient {
         }
     }
 
+    fun createRepository(directory: Path, url: String) = Arena.ofConfined().use { arena ->
+        val args = LoreArgs(arena)
+        val globals = args.globals(directory)
+        val options = arena.allocate(lore_repository_create_args_t.LAYOUT)
+        args.writeString(lore_repository_create_args_t.repository_url(options), url)
+
+        require(
+            EventPump.call(arena) { callback ->
+                LoreFunctions.lore_repository_create.invokeExact(globals, options, callback) as Int
+            },
+            "create repository at $url",
+        )
+    }
+
     fun require(result: LoreResult, what: String): LoreResult {
-        if (!result.succeeded) {
-            val status = result.statusOrNull()
-            throw LoreCallException(result, "$what failed: ${status?.name ?: "code ${result.status ?: result.returnCode}"}")
-        }
-        return result
+        if (result.succeeded) return result
+
+        val code = result.statusOrNull()?.name ?: "code ${result.status ?: result.returnCode}"
+        // Lore names the offending field in the error event, which is the only
+        // place the actual reason appears.
+        val detail = result.filter<ErrorEvent>()
+            .map { it.error_inner }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString("; ")
+
+        throw LoreCallException(result, buildString {
+            append("$what failed: $code")
+            if (detail.isNotEmpty()) append(" -- $detail")
+        })
     }
 }

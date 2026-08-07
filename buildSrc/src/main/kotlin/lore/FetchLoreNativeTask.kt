@@ -43,6 +43,13 @@ abstract class FetchLoreNativeTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
 
+    /** loreserver for this host only; used by integration tests, never shipped. */
+    @get:Input
+    abstract val serverPlatform: Property<String>
+
+    @get:OutputDirectory
+    abstract val serverDirectory: DirectoryProperty
+
     @get:Inject
     abstract val archives: ArchiveOperations
 
@@ -59,16 +66,45 @@ abstract class FetchLoreNativeTask : DefaultTask() {
         out.mkdirs()
 
         release.assets.forEach { asset ->
-            val archive = cache.resolve(asset.file)
-            if (!archive.isFile || sha256(archive) != asset.sha256) {
-                download(release.downloadUrl(asset), archive)
-            }
-            verify(archive, asset)
-            extract(archive, asset, out)
+            val archive = fetchArchive(release, cache, asset.file, asset.sha256)
+            extract(archive, asset.library, out.resolve(asset.platform))
         }
 
         writeHeaderOnce(out, release)
         fetchSource(release, cache, out)
+        fetchServer(release, cache)
+    }
+
+    private fun fetchServer(release: LoreRelease, cache: File) {
+        val serverOut = serverDirectory.get().asFile
+        fs.delete { delete(serverOut) }
+        serverOut.mkdirs()
+
+        val server = release.servers.firstOrNull { it.platform == serverPlatform.get() } ?: run {
+            logger.lifecycle("No loreserver for ${serverPlatform.get()}; integration tests will skip")
+            return
+        }
+        val archive = fetchArchive(release, cache, server.file, server.sha256)
+        extract(archive, server.binary, serverOut)
+    }
+
+    private fun fetchArchive(release: LoreRelease, cache: File, file: String, sha256: String): File {
+        val archive = cache.resolve(file)
+        if (!archive.isFile || sha256(archive) != sha256) {
+            download(release.downloadUrl(file), archive)
+        }
+        val actual = sha256(archive)
+        if (actual != sha256) {
+            archive.delete()
+            error(
+                "Checksum mismatch for $file\n" +
+                    "  expected $sha256\n" +
+                    "  actual   $actual\n" +
+                    "The cached download was deleted. If this repeats, the pinned checksum " +
+                    "in the manifest does not match what the release now serves."
+            )
+        }
+        return archive
     }
 
     // The general library error codes are not exported by lore.h; they live in
@@ -81,6 +117,7 @@ abstract class FetchLoreNativeTask : DefaultTask() {
         if (!cached.isFile || sha256(cached) != source.sha256) {
             download(release.sourceUrl(source), cached)
         }
+
         val actual = sha256(cached)
         if (actual != source.sha256) {
             cached.delete()
@@ -107,21 +144,7 @@ abstract class FetchLoreNativeTask : DefaultTask() {
         partial.renameTo(target)
     }
 
-    private fun verify(archive: File, asset: LoreAsset) {
-        val actual = sha256(archive)
-        if (actual != asset.sha256) {
-            archive.delete()
-            error(
-                "Checksum mismatch for ${asset.file}\n" +
-                    "  expected ${asset.sha256}\n" +
-                    "  actual   $actual\n" +
-                    "The cached download was deleted. If this repeats, the pinned checksum " +
-                    "in the manifest does not match what the release now serves."
-            )
-        }
-    }
-
-    private fun extract(archive: File, asset: LoreAsset, out: File) {
+    private fun extract(archive: File, binary: String, into: File) {
         val tree = if (archive.name.endsWith(".zip")) {
             archives.zipTree(archive)
         } else {
@@ -130,11 +153,11 @@ abstract class FetchLoreNativeTask : DefaultTask() {
 
         fs.copy {
             from(tree) {
-                include("**/${asset.library}", "**/lore.h", "**/LICENSE.txt", "**/THIRD-PARTY-NOTICES.txt")
+                include("**/$binary", "**/lore.h", "**/LICENSE.txt", "**/THIRD-PARTY-NOTICES.txt")
                 eachFile { path = name }
                 includeEmptyDirs = false
             }
-            into(out.resolve(asset.platform))
+            into(into)
         }
     }
 

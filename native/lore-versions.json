@@ -5,6 +5,28 @@
       "path": "lore-base/src/error.rs",
       "sha256": "b21d7d6535f14b85d836482a64320deb03e475b46807f43b0c4070db32432253"
     },
+    "server": {
+      "win-x64": {
+        "file": "loreserver-v0.8.6-x86_64-pc-windows-msvc.zip",
+        "sha256": "4251e1419875c08485e1d316a1a0c5724e29e2c1a4d952beeb6bf3344926c75e",
+        "binary": "loreserver.exe"
+      },
+      "linux-x64": {
+        "file": "loreserver-v0.8.6-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "f0de84c6175a476f157754f57316be0346105be502c93fabb65bb908eab0e1e1",
+        "binary": "loreserver"
+      },
+      "linux-arm64": {
+        "file": "loreserver-v0.8.6-aarch64-unknown-linux-gnu-neoverse-512tvb.tar.gz",
+        "sha256": "01a9abf87643c46c10d9fd7d31bb3c91f371b4b66d66c39df838604ce4e9c151",
+        "binary": "loreserver"
+      },
+      "mac-arm64": {
+        "file": "loreserver-v0.8.6-aarch64-apple-darwin.tar.gz",
+        "sha256": "48281fccf72ed3ba4ad3271175523595069295f4f30b936ebb15c2fa50199e4b",
+        "binary": "loreserver"
+      }
+    },
     "assets": {
       "win-x64": {
         "file": "liblore-v0.8.6-x86_64-pc-windows-msvc.zip",
