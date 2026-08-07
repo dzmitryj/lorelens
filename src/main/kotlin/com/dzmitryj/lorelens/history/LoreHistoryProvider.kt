@@ -6,9 +6,15 @@ import com.dzmitryj.lorelens.changes.LoreRevisionNumber
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreHistoryRecord
 import com.dzmitryj.lorelens.repo.LoreRootFinder
+import com.dzmitryj.lorelens.LoreLensBundle
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.FilePath
+import com.intellij.openapi.vcs.VcsDataKeys
 import com.intellij.openapi.vcs.VcsException
 import com.intellij.openapi.vcs.history.VcsAbstractHistorySession
 import com.intellij.openapi.vcs.history.VcsAppendableHistorySessionPartner
@@ -33,7 +39,8 @@ class LoreHistoryProvider(private val project: Project) : VcsHistoryProvider {
     override fun getUICustomization(session: VcsHistorySession, forShortcutRegistration: JComponent?) =
         VcsDependentHistoryComponents.createOnlyColumns(emptyArray())
 
-    override fun getAdditionalActions(refresher: Runnable): Array<AnAction> = emptyArray()
+    override fun getAdditionalActions(refresher: Runnable): Array<AnAction> =
+        arrayOf(OpenAtRevisionAction())
 
     override fun isDateOmittable(): Boolean = false
 
@@ -76,6 +83,24 @@ class LoreHistoryProvider(private val project: Project) : VcsHistoryProvider {
         runCatching { root.relativize(Path.of(path)).toString().replace('\\', '/') }
             .getOrNull()
             ?.takeIf { it.isNotEmpty() && !it.startsWith("..") }
+
+    /** The history view already exposes the selected revision as a virtual file. */
+    private inner class OpenAtRevisionAction : AnAction(
+        LoreLensBundle.message("log.open.at.revision"),
+        null,
+        AllIcons.Actions.MenuOpen,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = e.getData(VcsDataKeys.VCS_VIRTUAL_FILE) != null
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val file = e.getData(VcsDataKeys.VCS_VIRTUAL_FILE) ?: return
+            FileEditorManager.getInstance(project).openFile(file, true)
+        }
+    }
 
     private class LoreHistorySession(revisions: List<VcsFileRevision>) :
         VcsAbstractHistorySession(revisions) {
