@@ -387,6 +387,32 @@ class LoreRepositoryIntegrationTest {
         )
     }
 
+    /**
+     * A revision's changes are what it did to its parent. The log tab used to
+     * pair each changed file with the working tree instead, which answers a
+     * different and usually wrong question -- here it would also report the
+     * uncommitted file, which this revision did not touch.
+     */
+    @Test
+    fun `a revision diff reports only what that revision changed`() {
+        repository.resolve("w.txt").writeText("first")
+        LoreWriteApi.stage(repository, listOf("w.txt"))
+        LoreWriteApi.commit(repository, "add w")
+        val parent = LoreStatusApi.status(repository, scan = true).revision!!.revision
+
+        repository.resolve("x.txt").writeText("second")
+        LoreWriteApi.stage(repository, listOf("x.txt"))
+        LoreWriteApi.commit(repository, "add x")
+        val child = LoreStatusApi.status(repository, scan = true).revision!!.revision
+
+        // Uncommitted, so it belongs to no revision.
+        repository.resolve("y.txt").writeText("never committed")
+
+        val changed = LoreDiffApi.revisionDiff(repository, parent.hex, child.hex).map { it.path }
+
+        assertEquals(listOf("x.txt"), changed)
+    }
+
     @Test
     fun `hashing reports content addresses`() {
         repository.resolve("d.txt").writeText("addressable")

@@ -7,6 +7,7 @@ import com.dzmitryj.lorelens.api.LoreHistoryEntry
 import com.dzmitryj.lorelens.changes.LoreContentRevision
 import com.dzmitryj.lorelens.changes.LoreRevisionNumber
 import com.dzmitryj.lorelens.model.LoreFileAction
+import com.dzmitryj.lorelens.model.LoreRevisionChain
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -19,9 +20,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.FileStatus
 import com.intellij.openapi.vcs.LocalFilePath
 import com.intellij.openapi.vcs.changes.Change
-import com.intellij.openapi.vcs.changes.CurrentContentRevision
 import com.intellij.openapi.vcs.changes.ui.ChangesViewContentProvider
-import com.intellij.openapi.vcs.changes.ui.SimpleChangesBrowser
+import com.intellij.openapi.vcs.changes.ui.SimpleAsyncChangesBrowser
 import com.intellij.ui.ColoredTableCellRenderer
 import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.ScrollPaneFactory
@@ -51,7 +51,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private val log = logger<LoreLogTab>()
     private val model = HistoryModel()
-    private lateinit var changes: SimpleChangesBrowser
+    private lateinit var changes: SimpleAsyncChangesBrowser
 
     override fun initTabContent(content: Content) {
         val table = JBTable(model).apply {
@@ -67,9 +67,9 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             columnModel.getColumn(MESSAGE_COLUMN).preferredWidth = JBUI.scale(900)
         }
 
-        changes = SimpleChangesBrowser(project, emptyList())
+        changes = SimpleAsyncChangesBrowser(project, false, false)
         table.selectionModel.addListSelectionListener { event ->
-            if (!event.valueIsAdjusting) showChangedFiles(model.entryAt(table.selectedRow))
+            if (!event.valueIsAdjusting) showChangedFiles(table.selectedRow)
         }
 
         val splitter = OnePixelSplitter(true, "LoreLens.Log.Proportion", 0.6f).apply {
@@ -103,35 +103,50 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         }
     }
 
-    /** Loads the selected revision's changed files into the lower pane. */
-    private fun showChangedFiles(selected: Pair<Path, LoreHistoryEntry>?) {
+    /** Loads what the selected revision changed into the lower pane. */
+    private fun showChangedFiles(row: Int) {
+        val selected = model.entryAt(row)
         if (selected == null) {
             changes.setChangesToDisplay(emptyList())
             return
         }
 
         val (root, entry) = selected
+        val parent = model.entryAt(LoreRevisionChain.parentIndex(row))?.second
+
         ApplicationManager.getApplication().executeOnPooledThread {
-            val built = runCatching { buildChanges(root, entry) }
+            val built = runCatching { buildChanges(root, parent, entry) }
                 .onFailure { log.warn("Cannot read changes for revision ${entry.number}", it) }
                 .getOrDefault(emptyList())
             ApplicationManager.getApplication().invokeLater { changes.setChangesToDisplay(built) }
         }
     }
 
-    private fun buildChanges(root: Path, entry: LoreHistoryEntry): List<Change> {
+    /**
+     * A revision's changes are what it did to its parent. Pairing against the
+     * working tree instead would report "this revision versus whatever is on
+     * disk now", which is a different and usually wrong question.
+     */
+    private fun buildChanges(
+        root: Path,
+        parent: LoreHistoryEntry?,
+        entry: LoreHistoryEntry,
+    ): List<Change> {
         val revision = LoreRevisionNumber(entry.revision, entry.number)
+        val parentRevision = parent?.let { LoreRevisionNumber(it.revision, it.number) }
 
-        return LoreDiffApi.revisionDiff(root, entry.revision.hex).map { changed ->
-            val filePath = LocalFilePath(root.resolve(changed.path).toString(), false)
-            val before = LoreContentRevision(root, filePath, changed.path, revision)
+        return LoreDiffApi.revisionDiff(root, parent?.revision?.hex.orEmpty(), entry.revision.hex)
+            .map { changed ->
+                val filePath = LocalFilePath(root.resolve(changed.path).toString(), false)
+                val after = LoreContentRevision(root, filePath, changed.path, revision)
+                val before = parentRevision?.let { LoreContentRevision(root, filePath, changed.path, it) }
 
-            when (changed.action) {
-                LoreFileAction.ADD -> Change(null, CurrentContentRevision(filePath), FileStatus.ADDED)
-                LoreFileAction.DELETE -> Change(before, null, FileStatus.DELETED)
-                else -> Change(before, CurrentContentRevision(filePath), FileStatus.MODIFIED)
+                when (changed.action) {
+                    LoreFileAction.ADD -> Change(null, after, FileStatus.ADDED)
+                    LoreFileAction.DELETE -> Change(before, null, FileStatus.DELETED)
+                    else -> Change(before, after, FileStatus.MODIFIED)
+                }
             }
-        }
     }
 
     private inner class RefreshAction : AnAction(
