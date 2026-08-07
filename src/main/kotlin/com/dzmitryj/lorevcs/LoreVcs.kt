@@ -5,8 +5,10 @@ import com.dzmitryj.lorevcs.changes.LoreDiffProvider
 import com.dzmitryj.lorevcs.checkin.LoreCheckinEnvironment
 import com.dzmitryj.lorevcs.checkin.LoreRollbackEnvironment
 import com.dzmitryj.lorevcs.checkin.LoreVfsListenerService
+import com.dzmitryj.lorevcs.lock.LoreEditFileProvider
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.AbstractVcs
+import com.intellij.openapi.vcs.EditFileProvider
 import com.intellij.openapi.vcs.ProjectLevelVcsManager
 import com.intellij.openapi.vcs.VcsKey
 import com.intellij.openapi.vcs.changes.ChangeProvider
@@ -20,6 +22,7 @@ class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
     private val diffProvider = LoreDiffProvider(project)
     private val checkinEnvironment = LoreCheckinEnvironment(project)
     private val rollbackEnvironment = LoreRollbackEnvironment(project)
+    private val editFileProvider = LoreEditFileProvider(project)
 
     override fun getDisplayName(): String = LoreBundle.message("vcs.name")
 
@@ -30,6 +33,8 @@ class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
     override fun createCheckinEnvironment(): CheckinEnvironment = checkinEnvironment
 
     override fun createRollbackEnvironment(): RollbackEnvironment = rollbackEnvironment
+
+    override fun getEditFileProvider(): EditFileProvider = editFileProvider
 
     override fun activate() {
         LoreVfsListenerService.getInstance(myProject).start()
