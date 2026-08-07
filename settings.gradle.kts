@@ -2,6 +2,8 @@ import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
 
 rootProject.name = "LoreVersionControl"
 
+include(":codegen")
+
 pluginManagement {
     plugins {
         id("org.jetbrains.kotlin.jvm") version "2.3.20"
