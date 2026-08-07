@@ -21,6 +21,10 @@
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>org.jetbrains.kotlin</depends>
 
+    <dependencies>
+        <plugin id="com.intellij.modules.vcs"/>
+    </dependencies>
+
     <resource-bundle>messages.MyMessageBundle</resource-bundle>
 
     <!-- Extensions defined by the plugin.

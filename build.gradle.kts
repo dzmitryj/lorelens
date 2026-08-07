@@ -25,6 +25,11 @@ dependencies {
         // Add plugin dependencies for compilation here:
         bundledPlugin("org.jetbrains.kotlin")
 
+        // Content module defining the com.intellij.modules.vcs alias. Required
+        // on the classpath alongside the matching <dependencies> entry in
+        // plugin.xml -- the two are not redundant. See the commit message.
+        bundledModule("intellij.platform.vcs.impl")
+
         pluginVerifier()
         zipSigner()
     }
