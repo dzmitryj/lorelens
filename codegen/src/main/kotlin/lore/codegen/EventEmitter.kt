@@ -17,6 +17,82 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
         .let { (it.type as CType.InlineUnion).fields }
 
     private val payloadStructs = linkedSetOf<String>()
+    private val taggedUnions = linkedSetOf<String>()
+
+    /**
+     * A struct of exactly a tag plus an anonymous union, like lore_metadata_t.
+     * Without this the union member is dropped and the value silently
+     * disappears, which is how metadata values were lost before.
+     */
+    private fun isTaggedUnion(struct: CStruct): Boolean =
+        struct.name != EVENT_STRUCT &&
+            struct.fields.size == 2 &&
+            struct.fields[1].type is CType.InlineUnion &&
+            types.resolve(struct.fields[0].type) is CType.EnumRef
+
+    private fun tagEnumOf(struct: CStruct): CEnum {
+        val ref = types.resolve(struct.fields[0].type) as CType.EnumRef
+        return header.enums.first { it.name == ref.name }
+    }
+
+    /** Pairs each union member with the tag constant whose name ends in it. */
+    private fun armsOf(struct: CStruct): List<Pair<CEnumConstant, CField>> {
+        val constants = tagEnumOf(struct).constants
+        val members = (struct.fields[1].type as CType.InlineUnion).fields
+
+        return members.map { member ->
+            val constant = constants.firstOrNull {
+                it.name.lowercase().endsWith("_${member.name.lowercase()}")
+            } ?: error("No tag constant for union member '${member.name}' of ${struct.name}")
+            constant to member
+        }
+    }
+
+    private fun emitTaggedUnion(struct: CStruct): String = buildString {
+        val name = payloadClassName(struct.name)
+        val arms = armsOf(struct)
+
+        val tag = "${struct.name}.${safe(struct.fields[0].name)}(struct)"
+
+        append(kdocOf(struct.doc))
+        appendLine("sealed interface $name {")
+        appendLine("    data class Unknown(val tag: Int) : $name")
+        arms.forEach { (_, member) ->
+            // Suffixed so an arm cannot shadow the payload class it wraps, or a
+            // Kotlin built-in like String.
+            val armName = "${pascal(member.name)}Value"
+            val type = armKotlinType(member) ?: return@forEach
+            appendLine("    data class $armName(val value: $type) : $name")
+        }
+        appendLine("}")
+        appendLine()
+
+        appendLine("private fun read$name(struct: MemorySegment): $name =")
+        appendLine("    when ($tag) {")
+        arms.forEach { (constant, member) ->
+            val armName = "${pascal(member.name)}Value"
+            if (armKotlinType(member) == null) return@forEach
+            appendLine("        ${constant.value} -> $name.$armName(${armRead(struct, member)})")
+        }
+        appendLine("        else -> $name.Unknown($tag)")
+        appendLine("    }")
+        appendLine()
+    }
+
+    private fun armKotlinType(member: CField): String? =
+        types.carrierType(member.type)?.takeIf { it != "MemorySegment" } ?: kotlinType(member.type)
+
+    /** A union arm starts at the union's own offset, so scalars read at zero. */
+    private fun armRead(struct: CStruct, member: CField): String {
+        val union = "${struct.name}.union(struct)"
+        val carrier = types.carrierType(member.type)
+
+        return if (carrier != null && carrier != "MemorySegment") {
+            "$union.get(${types.layoutExpression(member.type)}, 0L)"
+        } else {
+            readExpression(member, "$union.asSlice(0L, ${types.sizeOf(member.type)}L)")
+        }
+    }
 
     fun emit(): String {
         val armsByName = arms.associateBy { it.name }
@@ -27,7 +103,8 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
 
         ordered.forEach { (_, field) -> collectPayload(field.type) }
 
-        val classes = payloadStructs.map { name -> dataClass(header.struct(name)) }
+        val classes = payloadStructs.map { name -> dataClass(header.struct(name)) } +
+            taggedUnions.map { name -> emitTaggedUnion(header.struct(name)) }
 
         return buildString {
             appendLine(banner(header.interfaceVersion))
@@ -84,17 +161,28 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
 
     private fun collectStruct(name: String) {
         val struct = header.struct(name)
-        struct.fields.forEach { field ->
-            val resolved = types.resolve(field.type)
-            if (resolved is CType.StructRef && !isSpecial(resolved.name)) {
-                if (payloadStructs.add(resolved.name)) collectStruct(resolved.name)
-            }
-            arrayElement(resolved)?.let { element ->
-                if (element is CType.StructRef && !isSpecial(element.name)) {
-                    if (payloadStructs.add(element.name)) collectStruct(element.name)
-                }
-            }
+        val fields = if (isTaggedUnion(struct)) {
+            (struct.fields[1].type as CType.InlineUnion).fields
+        } else {
+            struct.fields
         }
+
+        fields.forEach { field ->
+            val resolved = types.resolve(field.type)
+            collectType(resolved)
+            arrayElement(resolved)?.let(::collectType)
+        }
+    }
+
+    private fun collectType(type: CType) {
+        if (type !is CType.StructRef || isSpecial(type.name)) return
+
+        val struct = header.structs.firstOrNull { it.name == type.name } ?: return
+        if (isTaggedUnion(struct)) {
+            if (taggedUnions.add(type.name)) collectStruct(type.name)
+            return
+        }
+        if (payloadStructs.add(type.name)) collectStruct(type.name)
     }
 
     private fun isSpecial(name: String): Boolean =
@@ -166,6 +254,12 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
         }
     }
 
+    private fun isTaggedUnionRef(type: CType): Boolean {
+        val resolved = types.resolve(type)
+        return resolved is CType.StructRef &&
+            header.structs.firstOrNull { it.name == resolved.name }?.let { isTaggedUnion(it) } == true
+    }
+
     private fun elementKotlinType(element: CType): String? = when {
         element is CType.StructRef && element.name == STRING_STRUCT -> "String"
         element is CType.StructRef && isFixedByteArray(element.name) -> "ByteArray"
@@ -179,6 +273,7 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
 
         resolved as CType.StructRef
         return when {
+            isTaggedUnionRef(resolved) -> "read${payloadClassName(resolved.name)}($accessor)"
             resolved.name == STRING_STRUCT -> "LoreCopy.string($accessor)"
             resolved.name == BYTES_STRUCT -> "LoreCopy.bytes($accessor, ${BYTES_STRUCT}.len($accessor))"
             isFixedByteArray(resolved.name) -> {
