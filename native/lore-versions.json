@@ -1,0 +1,27 @@
+{
+  "v0.8.6": {
+    "interfaceVersion": "0.8.6",
+    "assets": {
+      "win-x64": {
+        "file": "liblore-v0.8.6-x86_64-pc-windows-msvc.zip",
+        "sha256": "1f6098c6fa492df5dd3ff0387920537bf20f4c0cf41349a48ca027c85e820e34",
+        "library": "lore.dll"
+      },
+      "linux-x64": {
+        "file": "liblore-v0.8.6-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "36087136120ecd50606ea879224b96434afc437cb6d9e2ce9c3bc6e5ddbf7695",
+        "library": "liblore.so"
+      },
+      "linux-arm64": {
+        "file": "liblore-v0.8.6-aarch64-unknown-linux-gnu-neoverse-512tvb.tar.gz",
+        "sha256": "ed49d0f512ed3d7736ea7764e7461434be1adb505d6777960e72326ee0a9cae3",
+        "library": "liblore.so"
+      },
+      "mac-arm64": {
+        "file": "liblore-v0.8.6-aarch64-apple-darwin.tar.gz",
+        "sha256": "f089e9e42510ea232e111bdcab64628136e8973bd67aecfa3de6d1bda33f299c",
+        "library": "liblore.dylib"
+      }
+    }
+  }
+}
