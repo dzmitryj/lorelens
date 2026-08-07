@@ -3,14 +3,25 @@ package lore.codegen
 import java.io.File
 
 fun main(args: Array<String>) {
-    require(args.size >= 1) { "usage: codegen <lore.h> [error.rs] [outputDir]" }
+    require(args.size >= 2) { "usage: codegen <lore.h> <outputDir>" }
 
     val header = HeaderParser.parse(File(args[0]).readText())
+    val types = TypeMapper(header)
+    val output = File(args[1])
 
-    println("interfaceVersion = ${header.interfaceVersion}")
-    println("defines   = ${header.defines.size}")
-    println("enums     = ${header.enums.size}")
-    println("structs   = ${header.structs.size} (opaque ${header.structs.count { it.opaque }})")
-    println("aliases   = ${header.aliases.size}")
-    println("functions = ${header.functions.size}")
+    output.mkdirs()
+    output.listFiles()?.forEach { it.delete() }
+
+    val files = mapOf(
+        "LoreEnums.kt" to EnumEmitter(header).emit(),
+        "LoreLayouts.kt" to LayoutEmitter(header, types).emit(),
+        "LoreFunctions.kt" to FunctionEmitter(header, types).emit(),
+    )
+
+    files.forEach { (name, content) ->
+        output.resolve(name).writeText(content)
+        println("$name  ${content.lines().size} lines")
+    }
+
+    println("generated bindings for lore ${header.interfaceVersion} into ${output.path}")
 }
