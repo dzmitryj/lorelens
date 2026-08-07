@@ -12,6 +12,7 @@ import com.dzmitryj.lorelens.ffi.generated.lore_revision_diff_args_t
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreFilePatch
 import com.dzmitryj.lorelens.model.LoreHistoryRecord
+import com.dzmitryj.lorelens.model.LoreMetadata
 import com.dzmitryj.lorelens.model.LoreRevisionChange
 import com.dzmitryj.lorelens.model.LoreRevisionId
 import java.lang.foreign.Arena
@@ -123,7 +124,7 @@ object LoreDiffApi {
                     number = entry.revision_number,
                     size = entry.size,
                     action = LoreFileAction.of(entry.action),
-                    metadata = metadata[revision.hex].orEmpty(),
+                    metadata = metadata[revision.hex] ?: LoreMetadata.EMPTY,
                 )
             }
         }

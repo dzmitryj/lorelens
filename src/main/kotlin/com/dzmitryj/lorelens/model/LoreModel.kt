@@ -95,8 +95,10 @@ data class LoreHistoryRecord(
     val number: Long,
     val size: Long,
     val action: LoreFileAction,
-    val metadata: Map<String, String>,
+    val metadata: LoreMetadata,
 ) {
-    val message: String? get() = metadata["message"]
-    val timestamp: String? get() = metadata["timestamp"]
+    val message: String? get() = metadata.message
+    val subject: String? get() = metadata.subject
+    val author: String? get() = metadata.author
+    val timestampMillis: Long? get() = metadata.timestampMillis
 }

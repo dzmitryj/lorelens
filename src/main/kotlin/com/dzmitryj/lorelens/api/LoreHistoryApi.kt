@@ -9,6 +9,7 @@ import com.dzmitryj.lorelens.ffi.generated.Metadata
 import com.dzmitryj.lorelens.ffi.generated.MetadataEvent
 import com.dzmitryj.lorelens.ffi.generated.RevisionHistoryEntryEvent
 import com.dzmitryj.lorelens.ffi.generated.lore_revision_history_args_t
+import com.dzmitryj.lorelens.model.LoreMetadata
 import com.dzmitryj.lorelens.model.LoreRevisionId
 import java.lang.foreign.Arena
 import java.nio.file.Path
@@ -16,13 +17,12 @@ import java.nio.file.Path
 data class LoreHistoryEntry(
     val revision: LoreRevisionId,
     val number: Long,
-    val metadata: Map<String, String>,
+    val metadata: LoreMetadata,
 ) {
-    val message: String? get() = metadata[MESSAGE_KEY]
-
-    private companion object {
-        const val MESSAGE_KEY = "message"
-    }
+    val message: String? get() = metadata.message
+    val subject: String? get() = metadata.subject
+    val author: String? get() = metadata.author
+    val timestampMillis: Long? get() = metadata.timestampMillis
 }
 
 object LoreHistoryApi {
@@ -53,7 +53,7 @@ object LoreHistoryApi {
      * it is attributed to whichever revision was announced most recently. Shared
      * with per-file history, which interleaves the same way.
      */
-    fun metadataByRevision(events: List<LoreEvent>): Map<String, Map<String, String>> {
+    fun metadataByRevision(events: List<LoreEvent>): Map<String, LoreMetadata> {
         val byRevision = mutableMapOf<String, MutableMap<String, String>>()
         var current: String? = null
 
@@ -61,13 +61,13 @@ object LoreHistoryApi {
             when (event) {
                 is RevisionHistoryEntryEvent -> current = LoreRevisionId(event.revision).hex
                 is FileHistoryEvent -> current = LoreRevisionId(event.revision).hex
-                is MetadataEvent -> (event.value as? Metadata.StringValue)?.let { value ->
-                    current?.let { byRevision.getOrPut(it) { mutableMapOf() }[event.key] = value.value }
+                is MetadataEvent -> LoreMetadata.render(event.key, event.value)?.let { rendered ->
+                    current?.let { byRevision.getOrPut(it) { mutableMapOf() }[event.key] = rendered }
                 }
                 else -> Unit
             }
         }
-        return byRevision
+        return byRevision.mapValues { (_, values) -> LoreMetadata(values) }
     }
 
     private fun assemble(events: List<LoreEvent>): List<LoreHistoryEntry> {
@@ -77,7 +77,7 @@ object LoreHistoryApi {
         var metadata = mutableMapOf<String, String>()
 
         fun flush() {
-            revision?.let { entries += LoreHistoryEntry(it, number, metadata.toMap()) }
+            revision?.let { entries += LoreHistoryEntry(it, number, LoreMetadata(metadata.toMap())) }
             revision = null
             metadata = mutableMapOf()
         }
@@ -90,8 +90,8 @@ object LoreHistoryApi {
                     number = event.revision_number
                 }
 
-                is MetadataEvent -> (event.value as? Metadata.StringValue)?.let {
-                    metadata[event.key] = it.value
+                is MetadataEvent -> LoreMetadata.render(event.key, event.value)?.let {
+                    metadata[event.key] = it
                 }
 
                 else -> Unit

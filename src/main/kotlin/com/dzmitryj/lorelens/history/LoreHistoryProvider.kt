@@ -18,21 +18,15 @@ import com.intellij.openapi.vcs.history.VcsHistoryProvider
 import com.intellij.openapi.vcs.history.VcsHistorySession
 import com.intellij.openapi.vcs.history.VcsRevisionNumber
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.vcsUtil.VcsUtil
 import java.nio.file.Path
-import java.time.Instant
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 import java.util.Date
 import javax.swing.JComponent
 
 /**
  * Puts Lore history into the IDE's own Show History UI.
  *
- * getAuthor returns null throughout: Lore records no author on a revision. The
- * complete metadata key set is message, branch and timestamp, and no history or
- * info struct carries an identity. Returning a placeholder would be a lie in the
- * one column users would trust most.
+ * Authorship comes from revision metadata (created-by / committed-by), not from
+ * the history or info structs, which carry no identity field.
  */
 class LoreHistoryProvider(private val project: Project) : VcsHistoryProvider {
 
@@ -105,14 +99,13 @@ class LoreHistoryProvider(private val project: Project) : VcsHistoryProvider {
 
         override fun getRevisionNumber(): VcsRevisionNumber = number
 
-        override fun getRevisionDate(): Date? = record.timestamp?.let(::parseDate)
+        override fun getRevisionDate(): Date? = record.timestampMillis?.let(::Date)
 
-        /** Lore records no author. See the class doc. */
-        override fun getAuthor(): String? = null
+        override fun getAuthor(): String? = record.author
 
         override fun getCommitMessage(): String? = record.message
 
-        override fun getBranchName(): String? = record.metadata["branch"]
+        override fun getBranchName(): String? = record.metadata.branch
 
         override fun getChangedRepositoryPath() = null
 
@@ -123,11 +116,5 @@ class LoreHistoryProvider(private val project: Project) : VcsHistoryProvider {
         // class implements it, so it has to be overridden.
         @Deprecated("Use loadContent", ReplaceWith("loadContent()"))
         override fun getContent(): ByteArray? = loadContent()
-
-        private fun parseDate(text: String): Date? =
-            runCatching { Date.from(Instant.from(DateTimeFormatter.RFC_1123_DATE_TIME.parse(text))) }
-                .getOrElse {
-                    if (it is DateTimeParseException) null else throw it
-                }
     }
 }

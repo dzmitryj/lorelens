@@ -10,6 +10,7 @@ import com.dzmitryj.lorelens.api.LoreWriteApi
 import com.dzmitryj.lorelens.changes.LoreContentRevision
 import com.dzmitryj.lorelens.changes.LoreRevisionNumber
 import com.dzmitryj.lorelens.model.LoreFileAction
+import com.dzmitryj.lorelens.model.LoreMetadata
 import com.intellij.openapi.vcs.LocalFilePath
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -319,6 +320,27 @@ class LoreRepositoryIntegrationTest {
             history.any { it.action == LoreFileAction.MOVE },
         )
         assertEquals("move s to t", history.first().message)
+    }
+
+    /**
+     * Metadata was previously filtered to StringValue only, which silently
+     * discarded the timestamp and any hash-valued key. Asserts the whole record
+     * survives, and that a multi-line message splits into subject and body.
+     */
+    @Test
+    fun `revision metadata survives decoding`() {
+        repository.resolve("u.txt").writeText("metadata")
+        LoreWriteApi.stage(repository, listOf("u.txt"))
+        LoreWriteApi.commit(repository, "feat(u): add u\n\nA body paragraph explaining why.")
+
+        val entry = LoreHistoryApi.history(repository).first()
+
+        assertEquals("feat(u): add u", entry.subject)
+        assertEquals("A body paragraph explaining why.", entry.metadata.body)
+        assertTrue(
+            "expected a parseable timestamp, got ${entry.metadata.values[LoreMetadata.TIMESTAMP]}",
+            entry.timestampMillis != null,
+        )
     }
 
     @Test
