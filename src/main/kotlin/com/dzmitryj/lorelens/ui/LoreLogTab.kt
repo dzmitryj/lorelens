@@ -16,31 +16,30 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.FileStatus
 import com.intellij.openapi.vcs.LocalFilePath
 import com.intellij.openapi.vcs.changes.Change
+import com.intellij.openapi.vcs.changes.actions.diff.ShowDiffAction
 import com.intellij.openapi.vcs.changes.ui.ChangesViewContentProvider
 import com.intellij.openapi.vcs.changes.ui.SimpleAsyncChangesBrowser
-import com.intellij.ui.ColoredTableCellRenderer
+import com.intellij.openapi.vcs.vfs.ContentRevisionVirtualFile
+import com.intellij.ui.DoubleClickListener
+import com.intellij.ui.FilterComponent
 import com.intellij.ui.OnePixelSplitter
+import com.intellij.ui.PopupHandler
 import com.intellij.ui.ScrollPaneFactory
-import com.intellij.ui.SimpleTextAttributes
+import com.intellij.ui.TableSpeedSearch
+import com.intellij.ui.components.JBLoadingPanel
 import com.intellij.ui.content.Content
-import com.intellij.ui.table.JBTable
-import com.intellij.util.text.DateFormatUtil
-import com.intellij.util.ui.JBUI
+import com.intellij.ui.table.TableView
+import com.intellij.util.ui.ListTableModel
 import java.awt.BorderLayout
+import java.awt.event.MouseEvent
 import java.nio.file.Path
 import javax.swing.JPanel
-import javax.swing.JTable
 import javax.swing.ListSelectionModel
-import javax.swing.table.AbstractTableModel
-
-private const val REVISION_COLUMN = 0
-private const val DATE_COLUMN = 1
-private const val AUTHOR_COLUMN = 2
-private const val MESSAGE_COLUMN = 3
 
 /**
  * A plain history table rather than a VcsLogProvider. Lore's revision chain is
@@ -50,48 +49,72 @@ private const val MESSAGE_COLUMN = 3
 class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private val log = logger<LoreLogTab>()
-    private val model = HistoryModel()
+    private val model = ListTableModel(LoreLogColumn.ALL, emptyList<LogRow>())
+    private val table = TableView(model)
+
     private lateinit var changes: SimpleAsyncChangesBrowser
+    private lateinit var loading: JBLoadingPanel
+
+    private var all: List<LogRow> = emptyList()
 
     override fun initTabContent(content: Content) {
-        val table = JBTable(model).apply {
+        table.apply {
             setShowGrid(false)
-            selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
+            // Two rows can be selected to compare them.
+            selectionModel.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
             emptyText.text = LoreLensBundle.message("log.empty")
-            // A JLabel has no line-box model, so a raw multi-line message paints
-            // its subject and body as one run. This renders them deliberately.
-            setDefaultRenderer(Any::class.java, EntryRenderer())
-            columnModel.getColumn(REVISION_COLUMN).preferredWidth = JBUI.scale(60)
-            columnModel.getColumn(DATE_COLUMN).preferredWidth = JBUI.scale(140)
-            columnModel.getColumn(AUTHOR_COLUMN).preferredWidth = JBUI.scale(180)
-            columnModel.getColumn(MESSAGE_COLUMN).preferredWidth = JBUI.scale(900)
         }
+        TableSpeedSearch.installOn(table)
 
         changes = SimpleAsyncChangesBrowser(project, false, false)
         table.selectionModel.addListSelectionListener { event ->
-            if (!event.valueIsAdjusting) showChangedFiles(table.selectedRow)
+            if (!event.valueIsAdjusting) showChangedFiles()
         }
+
+        val actions = DefaultActionGroup(
+            RefreshAction(),
+            CompareRevisionsAction(),
+            OpenAtRevisionAction(),
+        )
+        PopupHandler.installRowSelectionTablePopup(table, actions, "LoreLensLog")
+        object : DoubleClickListener() {
+            override fun onDoubleClick(event: MouseEvent): Boolean {
+                changes.showDiff()
+                return true
+            }
+        }.installOn(table)
 
         val splitter = OnePixelSplitter(true, "LoreLens.Log.Proportion", 0.6f).apply {
             firstComponent = ScrollPaneFactory.createScrollPane(table)
             secondComponent = changes
         }
 
+        loading = JBLoadingPanel(BorderLayout(), content).apply {
+            add(splitter, BorderLayout.CENTER)
+        }
+
         content.component = JPanel(BorderLayout()).apply {
             add(
-                ActionManager.getInstance()
-                    .createActionToolbar("LoreLensLog", DefaultActionGroup(RefreshAction()), true)
-                    .also { it.targetComponent = this }
-                    .component,
+                JPanel(BorderLayout()).apply {
+                    add(
+                        ActionManager.getInstance()
+                            .createActionToolbar("LoreLensLog", actions, true)
+                            .also { it.targetComponent = this }
+                            .component,
+                        BorderLayout.WEST,
+                    )
+                    add(LogFilter(), BorderLayout.EAST)
+                },
                 BorderLayout.NORTH,
             )
-            add(splitter, BorderLayout.CENTER)
+            add(loading, BorderLayout.CENTER)
         }
 
         refresh()
     }
 
     private fun refresh() {
+        loading.startLoading()
         ApplicationManager.getApplication().executeOnPooledThread {
             val entries = LoreRootFinder.mappedRoots(project).flatMap { root ->
                 runCatching { LoreHistoryApi.history(root.toNioPath(), HISTORY_LIMIT) }
@@ -99,20 +122,35 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                     .getOrDefault(emptyList())
                     .map { root.toNioPath() to it }
             }
-            ApplicationManager.getApplication().invokeLater { model.setEntries(entries) }
+            ApplicationManager.getApplication().invokeLater {
+                all = entries
+                model.items = entries
+                loading.stopLoading()
+            }
+        }
+    }
+
+    private fun applyFilter(text: String) {
+        val needle = text.trim().lowercase()
+        model.items = if (needle.isEmpty()) all else all.filter { row ->
+            val entry = row.entry
+            entry.subject.orEmpty().lowercase().contains(needle) ||
+                entry.author.orEmpty().lowercase().contains(needle) ||
+                entry.number.toString().contains(needle)
         }
     }
 
     /** Loads what the selected revision changed into the lower pane. */
-    private fun showChangedFiles(row: Int) {
-        val selected = model.entryAt(row)
+    private fun showChangedFiles() {
+        val row = table.selectedRow
+        val selected = model.items.getOrNull(row)
         if (selected == null) {
             changes.setChangesToDisplay(emptyList())
             return
         }
 
         val (root, entry) = selected
-        val parent = model.entryAt(LoreRevisionChain.parentIndex(row))?.second
+        val parent = LoreRevisionChain.parentOf(model.items, row)?.entry
 
         ApplicationManager.getApplication().executeOnPooledThread {
             val built = runCatching { buildChanges(root, parent, entry) }
@@ -131,15 +169,21 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         root: Path,
         parent: LoreHistoryEntry?,
         entry: LoreHistoryEntry,
-    ): List<Change> {
-        val revision = LoreRevisionNumber(entry.revision, entry.number)
-        val parentRevision = parent?.let { LoreRevisionNumber(it.revision, it.number) }
+    ): List<Change> = changesBetween(root, parent, entry)
 
-        return LoreDiffApi.revisionDiff(root, parent?.revision?.hex.orEmpty(), entry.revision.hex)
+    private fun changesBetween(
+        root: Path,
+        older: LoreHistoryEntry?,
+        newer: LoreHistoryEntry,
+    ): List<Change> {
+        val newerRevision = LoreRevisionNumber(newer.revision, newer.number)
+        val olderRevision = older?.let { LoreRevisionNumber(it.revision, it.number) }
+
+        return LoreDiffApi.revisionDiff(root, older?.revision?.hex.orEmpty(), newer.revision.hex)
             .map { changed ->
                 val filePath = LocalFilePath(root.resolve(changed.path).toString(), false)
-                val after = LoreContentRevision(root, filePath, changed.path, revision)
-                val before = parentRevision?.let { LoreContentRevision(root, filePath, changed.path, it) }
+                val after = LoreContentRevision(root, filePath, changed.path, newerRevision)
+                val before = olderRevision?.let { LoreContentRevision(root, filePath, changed.path, it) }
 
                 when (changed.action) {
                     LoreFileAction.ADD -> Change(null, after, FileStatus.ADDED)
@@ -149,77 +193,70 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             }
     }
 
+    private inner class LogFilter : FilterComponent("LoreLens.Log.Filter", 10) {
+        override fun filter() = applyFilter(filter ?: "")
+    }
+
     private inner class RefreshAction : AnAction(
         LoreLensBundle.message("log.refresh"),
         null,
         com.intellij.icons.AllIcons.Actions.Refresh,
     ) {
-        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
 
         override fun actionPerformed(e: AnActionEvent) = refresh()
     }
 
-    private class EntryRenderer : ColoredTableCellRenderer() {
+    /** Enabled only for exactly two selected revisions. */
+    private inner class CompareRevisionsAction : AnAction(
+        LoreLensBundle.message("log.compare"),
+        null,
+        com.intellij.icons.AllIcons.Actions.Diff,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
 
-        override fun customizeCellRenderer(
-            table: JTable,
-            value: Any?,
-            selected: Boolean,
-            hasFocus: Boolean,
-            row: Int,
-            column: Int,
-        ) {
-            val entry = value as? LoreHistoryEntry ?: return
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = table.selectedObjects.size == 2
+        }
 
-            when (column) {
-                REVISION_COLUMN -> append(entry.number.toString(), SimpleTextAttributes.REGULAR_ATTRIBUTES)
+        override fun actionPerformed(e: AnActionEvent) {
+            val selected = table.selectedObjects.takeIf { it.size == 2 } ?: return
+            val (newer, older) = selected.sortedByDescending { it.entry.number }
+            val root = newer.first
 
-                DATE_COLUMN -> entry.timestampMillis?.let {
-                    append(DateFormatUtil.formatPrettyDateTime(it), SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                }
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val built = runCatching { changesBetween(root, older.entry, newer.entry) }
+                    .onFailure { log.warn("Cannot compare revisions", it) }
+                    .getOrDefault(emptyList())
+                if (built.isEmpty()) return@executeOnPooledThread
 
-                AUTHOR_COLUMN -> {
-                    append(entry.author.orEmpty(), SimpleTextAttributes.REGULAR_ATTRIBUTES)
-                    val committer = entry.metadata.committer
-                    if (committer != null && committer != entry.author) {
-                        append("  committed by $committer", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                    }
-                }
-
-                MESSAGE_COLUMN -> {
-                    append(entry.subject.orEmpty(), SimpleTextAttributes.REGULAR_ATTRIBUTES)
-                    entry.metadata.body?.let { body ->
-                        append("  ${body.lineSequence().first()}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                    }
+                ApplicationManager.getApplication().invokeLater {
+                    ShowDiffAction.showDiffForChange(project, built)
                 }
             }
         }
     }
 
-    private class HistoryModel : AbstractTableModel() {
+    /** Opens the file as it stood at the selected revision, read only. */
+    private inner class OpenAtRevisionAction : AnAction(
+        LoreLensBundle.message("log.open.at.revision"),
+        null,
+        com.intellij.icons.AllIcons.Actions.MenuOpen,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
 
-        private var entries: List<Pair<Path, LoreHistoryEntry>> = emptyList()
-
-        fun setEntries(value: List<Pair<Path, LoreHistoryEntry>>) {
-            entries = value
-            fireTableDataChanged()
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = changes.selectedChanges.isNotEmpty()
         }
 
-        fun entryAt(row: Int): Pair<Path, LoreHistoryEntry>? = entries.getOrNull(row)
-
-        override fun getRowCount(): Int = entries.size
-
-        override fun getColumnCount(): Int = 4
-
-        override fun getColumnName(column: Int): String = when (column) {
-            REVISION_COLUMN -> LoreLensBundle.message("log.column.revision")
-            DATE_COLUMN -> LoreLensBundle.message("log.column.date")
-            AUTHOR_COLUMN -> LoreLensBundle.message("log.column.author")
-            else -> LoreLensBundle.message("log.column.message")
+        override fun actionPerformed(e: AnActionEvent) {
+            changes.selectedChanges
+                .mapNotNull { it.beforeRevision ?: it.afterRevision }
+                .forEach { revision ->
+                    val file = ContentRevisionVirtualFile.create(revision)
+                    FileEditorManager.getInstance(project).openFile(file, true)
+                }
         }
-
-        /** The whole entry, so the renderer can style each column from it. */
-        override fun getValueAt(rowIndex: Int, columnIndex: Int): Any = entries[rowIndex].second
     }
 
     private companion object {
