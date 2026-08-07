@@ -21,7 +21,9 @@ class LoreMappingMigration : ProjectActivity {
     override suspend fun execute(project: Project) {
         val manager = ProjectLevelVcsManager.getInstance(project)
 
-        val stale = manager.directoryMappings.filter { mapping ->
+        // Property syntax on directoryMappings resolves to the deprecated
+        // DoNotUse pair; this is the supported call.
+        val stale = manager.getDirectoryMappings().filter { mapping ->
             mapping.vcs in FORMER_VCS_NAMES && isLoreRoot(directoryOf(project, mapping.directory) ?: return@filter false)
         }
         if (stale.isEmpty()) return
