@@ -1,8 +1,6 @@
 package com.dzmitryj.lorevcs.ffi
 
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.extensions.PluginId
 import java.lang.foreign.Arena
 import java.lang.foreign.FunctionDescriptor
 import java.lang.foreign.Linker
@@ -16,8 +14,6 @@ class LoreNativeUnavailableException(message: String, cause: Throwable? = null) 
     RuntimeException(message, cause)
 
 object LoreLinker {
-
-    private const val PLUGIN_ID = "com.dzmitryj.LoreVersionControl"
 
     /** Overrides the search path; set by tests, which run outside a plugin install. */
     const val NATIVE_DIR_PROPERTY = "lore.native.dir"
@@ -55,23 +51,29 @@ object LoreLinker {
                 "Lore does not ship a native library for ${NativePlatform.describeCurrent()}"
             )
 
-        val root = nativeRoot()
-        val path = root.resolve(platform.directory).resolve(platform.library)
+        val path = nativeRoot().resolve(platform.directory).resolve(platform.library)
         if (!path.exists()) {
             throw LoreNativeUnavailableException("Bundled liblore is missing at $path")
         }
         return path
     }
 
+    /**
+     * Derived from this class's own jar, at plugin/lib/x.jar, rather than from
+     * the plugin descriptor: PluginManagerCore.getPlugin is internal API.
+     */
     private fun nativeRoot(): Path {
         System.getProperty(NATIVE_DIR_PROPERTY)?.let { return Path.of(it) }
 
-        val descriptor = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))
-            ?: throw LoreNativeUnavailableException("Plugin $PLUGIN_ID is not registered")
+        val location = LoreLinker::class.java.protectionDomain?.codeSource?.location
+            ?: throw LoreNativeUnavailableException("Cannot locate the plugin directory")
 
-        val candidate = descriptor.pluginPath.resolve("native")
+        val pluginRoot = Path.of(location.toURI()).parent?.parent
+            ?: throw LoreNativeUnavailableException("Unexpected plugin layout at $location")
+
+        val candidate = pluginRoot.resolve("native")
         if (!Files.isDirectory(candidate)) {
-            throw LoreNativeUnavailableException("No native directory in ${descriptor.pluginPath}")
+            throw LoreNativeUnavailableException("No native directory in $pluginRoot")
         }
         return candidate
     }

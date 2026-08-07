@@ -80,7 +80,19 @@ intellijPlatform {
         vendor {
             name = "Dimi Mitchell"
             email = "dimi.mitchell@gmail.com"
+            url = "https://github.com/dzmitryj/lore-version-control"
         }
+
+        description = """
+            Version control integration for <a href="https://lore.org">Lore</a>, Epic Games' open-source
+            version control system for repositories that mix code with large binary assets.
+            <br><br>
+            Lore's status deliberately performs no filesystem walk; it trusts the files it has been told
+            changed. This plugin tells it, as you edit, so the Changes view stays accurate without ever
+            scanning a large repository.
+            <br><br>
+            Not affiliated with or endorsed by Epic Games. Bundles the Lore shared library (MIT).
+        """.trimIndent()
     }
 
     pluginVerification {

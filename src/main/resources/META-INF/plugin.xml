@@ -1,13 +1,6 @@
 <idea-plugin>
     <id>com.dzmitryj.LoreVersionControl</id>
     <name>LoreVersionControl</name>
-    <vendor url="https://www.yourcompany.com">YourCompany</vendor>
-
-    <description><![CDATA[
-        Enter short description for your plugin here.<br>
-        <em>most HTML tags may be used</em>
-        ]]></description>
-
     <dependencies>
         <plugin id="com.intellij.modules.vcs"/>
     </dependencies>
@@ -18,5 +11,14 @@
         <vcs name="Lore" vcsClass="com.dzmitryj.lorevcs.LoreVcs" displayName="Lore"
              administrativeAreaName=".lore" areChildrenValidMappings="true"/>
         <vcsRootChecker implementation="com.dzmitryj.lorevcs.repo.LoreRootChecker"/>
+        <vfs.asyncListener implementation="com.dzmitryj.lorevcs.dirty.LoreAsyncFileListener"/>
+        <postStartupActivity implementation="com.dzmitryj.lorevcs.dirty.LoreStartupRescan"/>
+        <notificationGroup id="Lore" displayType="BALLOON" bundle="messages.LoreBundle" key="vcs.name"/>
     </extensions>
+
+    <actions>
+        <action id="Lore.FullRescan" class="com.dzmitryj.lorevcs.dirty.LoreFullRescanAction">
+            <add-to-group group-id="Vcs.Operations.Popup.VcsAware" anchor="last"/>
+        </action>
+    </actions>
 </idea-plugin>
