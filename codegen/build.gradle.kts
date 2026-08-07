@@ -22,6 +22,7 @@ val loreVersion = providers.gradleProperty("loreVersion").get()
 val nativeDir = rootProject.layout.buildDirectory.dir("lore-native/$loreVersion").get().asFile
 val generatedDir = rootProject.layout.projectDirectory
     .dir("src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated").asFile
+val probeDir = rootProject.layout.buildDirectory.dir("layout-probe").get().asFile
 
 tasks.register<JavaExec>("generateLoreBindings") {
     group = "lore"
@@ -33,5 +34,6 @@ tasks.register<JavaExec>("generateLoreBindings") {
         nativeDir.resolve("lore.h").absolutePath,
         nativeDir.resolve("error.rs").absolutePath,
         generatedDir.absolutePath,
+        probeDir.absolutePath,
     )
 }

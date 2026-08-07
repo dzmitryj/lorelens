@@ -3,7 +3,7 @@ package lore.codegen
 import java.io.File
 
 fun main(args: Array<String>) {
-    require(args.size >= 3) { "usage: codegen <lore.h> <error.rs> <outputDir>" }
+    require(args.size >= 4) { "usage: codegen <lore.h> <error.rs> <outputDir> <probeDir>" }
 
     val header = HeaderParser.parse(File(args[0]).readText())
     val types = TypeMapper(header)
@@ -26,6 +26,11 @@ fun main(args: Array<String>) {
         output.resolve(name).writeText(content)
         println("$name  ${content.lines().size} lines")
     }
+
+    val probeDir = File(args[3]).also { it.mkdirs() }
+    val probe = probeDir.resolve("layout_probe.c")
+    probe.writeText(LayoutProbeEmitter(header, types).emit())
+    println("${probe.name}  ${probe.readLines().size} lines")
 
     println("generated bindings for lore ${header.interfaceVersion} into ${output.path}")
 }
