@@ -2,7 +2,6 @@ package com.dzmitryj.lorevcs.changes
 
 import com.dzmitryj.lorevcs.api.LoreStatusApi
 import com.dzmitryj.lorevcs.model.LoreRevisionId
-import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vcs.FilePath
 import com.intellij.openapi.vcs.VcsException
 import com.intellij.openapi.vcs.history.VcsRevisionNumber
@@ -57,13 +56,20 @@ class LoreContentRevision(
 
     override fun getContent(): String? = getContentAsBytes()?.toString(Charsets.UTF_8)
 
+    /**
+     * lore_file_write refuses to overwrite an existing output file, so the
+     * destination must be a path that does not exist yet -- a temp *directory*
+     * with a name inside it, never a temp file.
+     */
     private fun fetch(): ByteArray {
-        val temp = FileUtil.createTempFile("lore-content", null, true).toPath()
+        val directory = Files.createTempDirectory("lore-content")
+        val temp = directory.resolve("content")
         return try {
             LoreStatusApi.writeFile(root, relativePath, revision.id.hex, temp)
             Files.readAllBytes(temp)
         } finally {
             Files.deleteIfExists(temp)
+            Files.deleteIfExists(directory)
         }
     }
 

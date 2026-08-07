@@ -6,7 +6,10 @@ import com.dzmitryj.lorevcs.api.LoreLockApi
 import com.dzmitryj.lorevcs.api.LoreStatusApi
 import com.dzmitryj.lorevcs.api.LoreSyncApi
 import com.dzmitryj.lorevcs.api.LoreWriteApi
+import com.dzmitryj.lorevcs.changes.LoreContentRevision
+import com.dzmitryj.lorevcs.changes.LoreRevisionNumber
 import com.dzmitryj.lorevcs.model.LoreFileAction
+import com.intellij.openapi.vcs.LocalFilePath
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -225,6 +228,31 @@ class LoreRepositoryIntegrationTest {
         assertEquals(1, history.size)
         assertEquals(1L, history.single().number)
         assertEquals("a memorable message", history.single().message)
+    }
+
+    /**
+     * lore_file_write fails with INVALID_PATH when the output already exists.
+     * Content revisions used to hand it a created temp file, so every base
+     * content fetch failed and diffs and gutter markers were dead.
+     */
+    @Test
+    fun `content can be read through a content revision`() {
+        repository.resolve("n.txt").writeText("base content")
+        LoreWriteApi.stage(repository, listOf("n.txt"))
+        LoreWriteApi.commit(repository, "add n.txt")
+        repository.resolve("n.txt").writeText("working copy")
+
+        val status = LoreStatusApi.status(repository, scan = true)
+        val revision = LoreRevisionNumber(status.revision!!.revision, status.revision!!.revisionNumber)
+
+        val content = LoreContentRevision(
+            repository,
+            LocalFilePath(repository.resolve("n.txt").toString(), false),
+            "n.txt",
+            revision,
+        ).contentAsBytes
+
+        assertEquals("base content", content?.toString(Charsets.UTF_8))
     }
 
     @Test
