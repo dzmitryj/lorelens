@@ -26,7 +26,10 @@ do that as well.
   naming the holder, and the status bar shows branch, revision, and locks held
 - **Clone and sync**, including a client-side view filter at clone time
 - **`.loreignore`** with syntax highlighting, comment toggling and the platform's ignore inspections
-- **Lore Log** tab listing revisions and commit messages
+- **LoreLens tab**: revisions with author, date and message, and the changed files of whichever revision you select
+- **File history** in the IDE's own Show History, following renames exactly — Lore records moves rather than
+  inferring them
+- **Blame on the caret line**, GitLens style: author, relative date and subject as an end-of-line hint
 
 ## Requirements
 

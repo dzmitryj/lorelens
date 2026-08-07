@@ -7,6 +7,7 @@ import com.dzmitryj.lorelens.api.LoreLockApi
 import com.dzmitryj.lorelens.api.LoreStatusApi
 import com.dzmitryj.lorelens.api.LoreSyncApi
 import com.dzmitryj.lorelens.api.LoreWriteApi
+import com.dzmitryj.lorelens.blame.LoreBlameEngine
 import com.dzmitryj.lorelens.changes.LoreContentRevision
 import com.dzmitryj.lorelens.changes.LoreRevisionNumber
 import com.dzmitryj.lorelens.model.LoreFileAction
@@ -340,6 +341,49 @@ class LoreRepositoryIntegrationTest {
         assertTrue(
             "expected a parseable timestamp, got ${entry.metadata.values[LoreMetadata.TIMESTAMP]}",
             entry.timestampMillis != null,
+        )
+    }
+
+    /**
+     * Attribution across three commits with known edits: the untouched line
+     * keeps the first revision, the edited one moves to the second, and the
+     * appended one belongs to the third.
+     */
+    @Test
+    fun `blame attributes each line to the revision that introduced it`() {
+        val file = repository.resolve("v.txt")
+
+        file.writeText("alpha\nbeta\n")
+        LoreWriteApi.stage(repository, listOf("v.txt"))
+        LoreWriteApi.commit(repository, "one")
+        val first = LoreStatusApi.status(repository, scan = true).revision!!.revision
+
+        file.writeText("alpha\nBETA\n")
+        LoreWriteApi.stage(repository, listOf("v.txt"))
+        LoreWriteApi.commit(repository, "two")
+        val second = LoreStatusApi.status(repository, scan = true).revision!!.revision
+
+        file.writeText("alpha\nBETA\ngamma\n")
+        LoreWriteApi.stage(repository, listOf("v.txt"))
+        LoreWriteApi.commit(repository, "three")
+        val third = LoreStatusApi.status(repository, scan = true).revision!!.revision
+
+        val history = LoreDiffApi.fileHistory(repository, "v.txt")
+        assertEquals(3, history.size)
+
+        val ordered = history.reversed()
+        var attribution = List(2) { ordered.first() }
+        ordered.zipWithNext().forEach { (previous, next) ->
+            val patch = LoreDiffApi
+                .fileDiff(repository, listOf("v.txt"), previous.revision.hex, next.revision.hex, contextLines = 0)
+                .single()
+                .patch
+            attribution = LoreBlameEngine.advance(attribution, patch, next)
+        }
+
+        assertEquals(
+            listOf(first.hex, second.hex, third.hex),
+            attribution.map { it.revision.hex },
         )
     }
 
