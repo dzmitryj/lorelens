@@ -2,6 +2,7 @@ package com.dzmitryj.lorevcs
 
 import com.dzmitryj.lorevcs.api.LoreClient
 import com.dzmitryj.lorevcs.api.LoreStatusApi
+import com.dzmitryj.lorevcs.api.LoreWriteApi
 import com.dzmitryj.lorevcs.model.LoreFileAction
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -101,6 +102,30 @@ class LoreRepositoryIntegrationTest {
         LoreStatusApi.writeFile(repository, "e.txt", revision.hex, output)
 
         assertEquals("original", Files.readString(output))
+    }
+
+    /**
+     * Settles whether reset moves the revision pointer, like git reset, or
+     * restores file content, like git checkout --. Wiring the wrong one to the
+     * Revert action would destroy uncommitted work, so RollbackEnvironment
+     * stays unregistered until this passes.
+     */
+    @Test
+    fun `reset restores file content and leaves the revision alone`() {
+        repository.resolve("f.txt").writeText("original")
+        LoreTestRepository.stage(repository, listOf("f.txt"))
+        LoreTestRepository.commit(repository, "add f.txt")
+
+        val before = LoreStatusApi.status(repository, scan = true).revision!!
+
+        repository.resolve("f.txt").writeText("edited")
+        LoreWriteApi.reset(repository, listOf("f.txt"))
+
+        assertEquals("original", Files.readString(repository.resolve("f.txt")))
+
+        val after = LoreStatusApi.status(repository, scan = true).revision!!
+        assertEquals(before.revisionNumber, after.revisionNumber)
+        assertEquals(before.revision.hex, after.revision.hex)
     }
 
     @Test
