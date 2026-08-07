@@ -125,9 +125,12 @@ object LoreDiffApi {
                     size = entry.size,
                     action = LoreFileAction.of(entry.action),
                     metadata = metadata[revision.hex] ?: LoreMetadata.EMPTY,
+                    address = entry.address.hash.toHex() + entry.address.context.toHex(),
                 )
             }
         }
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
     private fun relative(root: Path, path: String): String =
         runCatching { root.relativize(Path.of(path)).toString().replace('\\', '/') }

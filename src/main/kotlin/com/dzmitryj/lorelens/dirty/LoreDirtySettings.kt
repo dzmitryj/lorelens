@@ -20,6 +20,8 @@ class LoreDirtySettings : PersistentStateComponent<LoreDirtySettings.State> {
          * so an asset repository is not walked on every project open.
          */
         var scannedInstances: MutableSet<String> = mutableSetOf(),
+        /** The GitLens-style end-of-line blame hint on the caret line. */
+        var showBlameHint: Boolean = true,
     )
 
     private var state = State()
@@ -39,6 +41,12 @@ class LoreDirtySettings : PersistentStateComponent<LoreDirtySettings.State> {
     val debounceMillis: Int get() = state.debounceMillis
 
     val maxBatchSize: Int get() = state.maxBatchSize
+
+    var showBlameHint: Boolean
+        get() = state.showBlameHint
+        set(value) {
+            state.showBlameHint = value
+        }
 
     fun needsInitialScan(instanceId: String): Boolean = instanceId !in state.scannedInstances
 

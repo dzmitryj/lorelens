@@ -96,6 +96,9 @@ data class LoreHistoryRecord(
     val size: Long,
     val action: LoreFileAction,
     val metadata: LoreMetadata,
+    /** Content address. Equal addresses mean identical bytes, so a diff between
+     *  two revisions sharing one is provably empty. */
+    val address: String,
 ) {
     val message: String? get() = metadata.message
     val subject: String? get() = metadata.subject
