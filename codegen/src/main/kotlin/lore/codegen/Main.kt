@@ -19,6 +19,7 @@ fun main(args: Array<String>) {
         "LoreFunctions.kt" to FunctionEmitter(header, types).emit(),
         "LoreStatus.kt" to ErrorCodeEmitter(header.interfaceVersion, errorCodes).emit(),
         "LoreEvents.kt" to EventEmitter(header, types).emit(),
+        "LoreBuildInfo.kt" to buildInfo(header),
     )
 
     files.forEach { (name, content) ->
@@ -28,3 +29,14 @@ fun main(args: Array<String>) {
 
     println("generated bindings for lore ${header.interfaceVersion} into ${output.path}")
 }
+
+private fun buildInfo(header: CHeader): String = """
+    |${banner(header.interfaceVersion)}
+    |package $GENERATED_PACKAGE
+    |
+    |object LoreBuildInfo {
+    |    /** The LORE_INTERFACE_VERSION these bindings were generated against. */
+    |    const val INTERFACE_VERSION: String = "${header.interfaceVersion}"
+    |}
+    |
+""".trimMargin()
