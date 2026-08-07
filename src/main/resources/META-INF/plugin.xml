@@ -15,5 +15,8 @@
     <resource-bundle>messages.LoreBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
+        <vcs name="Lore" vcsClass="com.dzmitryj.lorevcs.LoreVcs" displayName="Lore"
+             administrativeAreaName=".lore" areChildrenValidMappings="true"/>
+        <vcsRootChecker implementation="com.dzmitryj.lorevcs.repo.LoreRootChecker"/>
     </extensions>
 </idea-plugin>
