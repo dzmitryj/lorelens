@@ -65,7 +65,7 @@ tasks.prepareSandbox {
     dependsOn(fetchLoreNative)
     from(loreNativeDir) {
         into("${project.name}/native")
-        exclude("lore.h")
+        exclude("lore.h", "error.rs")
     }
 }
 
