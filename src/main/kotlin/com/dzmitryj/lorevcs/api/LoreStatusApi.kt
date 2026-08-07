@@ -7,8 +7,8 @@ import com.dzmitryj.lorevcs.ffi.generated.LoreFunctions
 import com.dzmitryj.lorevcs.ffi.generated.RepositoryStatusFileEvent
 import com.dzmitryj.lorevcs.ffi.generated.RepositoryStatusRevisionEvent
 import com.dzmitryj.lorevcs.ffi.generated.lore_file_dirty_args_t
-import com.dzmitryj.lorevcs.ffi.generated.lore_file_dump_args_t
 import com.dzmitryj.lorevcs.ffi.generated.lore_file_hash_args_t
+import com.dzmitryj.lorevcs.ffi.generated.lore_file_write_args_t
 import com.dzmitryj.lorevcs.ffi.generated.lore_repository_status_args_t
 import com.dzmitryj.lorevcs.model.LoreFileAction
 import com.dzmitryj.lorevcs.model.LoreFileHash
@@ -97,20 +97,26 @@ object LoreStatusApi {
         }
     }
 
-    /** Writes the content of [path] at [address] to [destination] on disk. */
-    fun dump(root: Path, address: String, path: String, destination: Path) {
+    /**
+     * Writes the content of [path] at [revision] to [output] on disk.
+     *
+     * lore_file_dump reports sizes rather than bytes, so this is the verb that
+     * actually yields content.
+     */
+    fun writeFile(root: Path, path: String, revision: String, output: Path) {
         Arena.ofConfined().use { arena ->
             val args = LoreArgs(arena)
             val globals = args.globals(root)
-            val options = arena.allocate(lore_file_dump_args_t.LAYOUT)
-            args.writeString(lore_file_dump_args_t.address(options), address)
-            args.writeString(lore_file_dump_args_t.path(options), destination.toString())
+            val options = arena.allocate(lore_file_write_args_t.LAYOUT)
+            args.writeString(lore_file_write_args_t.path(options), path)
+            args.writeString(lore_file_write_args_t.revision(options), revision)
+            args.writeString(lore_file_write_args_t.output(options), output.toString())
 
             LoreClient.require(
                 EventPump.call(arena) { callback ->
-                    LoreFunctions.lore_file_dump.invokeExact(globals, options, callback) as Int
+                    LoreFunctions.lore_file_write.invokeExact(globals, options, callback) as Int
                 },
-                "dump $path",
+                "read $path at $revision",
             )
         }
     }
