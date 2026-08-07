@@ -36,8 +36,12 @@ object EventPump {
 
     private val log = logger<EventPump>()
     private val arena: Arena = Arena.ofShared()
-    private val calls = ConcurrentHashMap<Long, MutableList<LoreEvent>>()
+    private val calls = ConcurrentHashMap<Long, Sink>()
     private val nextCallId = AtomicLong(1)
+
+    private class Sink(val observer: ((LoreEvent) -> Unit)?) {
+        val events = mutableListOf<LoreEvent>()
+    }
 
     private val stub: MemorySegment by lazy {
         val target = MethodHandles.lookup().findStatic(
@@ -57,7 +61,8 @@ object EventPump {
         try {
             val sink = calls[context] ?: return
             val decoded = LoreEventReader.read(event.reinterpret(lore_event_t.SIZE))
-            synchronized(sink) { sink += decoded }
+            synchronized(sink) { sink.events += decoded }
+            sink.observer?.invoke(decoded)
         } catch (t: Throwable) {
             log.error("Lore event callback failed for call $context", t)
         }
@@ -66,10 +71,17 @@ object EventPump {
     /**
      * Runs one synchronous operation. [invoke] receives the callback config to
      * pass through and returns the operation's own return code.
+     *
+     * [observer] sees events as they arrive, on Lore's worker thread, so it must
+     * not block and must not take IDE locks.
      */
-    fun call(arena: Arena, invoke: (MemorySegment) -> Int): LoreResult {
+    fun call(
+        arena: Arena,
+        observer: ((LoreEvent) -> Unit)? = null,
+        invoke: (MemorySegment) -> Int,
+    ): LoreResult {
         val id = nextCallId.getAndIncrement()
-        val sink = mutableListOf<LoreEvent>()
+        val sink = Sink(observer)
         calls[id] = sink
 
         val returnCode = try {
@@ -81,7 +93,7 @@ object EventPump {
             calls.remove(id)
         }
 
-        val events = synchronized(sink) { sink.toList() }
+        val events = synchronized(sink) { sink.events.toList() }
         val status = events.filterIsInstance<CompleteEvent>().lastOrNull()?.status
         return LoreResult(returnCode, status, events)
     }
