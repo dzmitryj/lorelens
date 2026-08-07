@@ -128,6 +128,39 @@ class LoreRepositoryIntegrationTest {
         assertEquals(before.revision.hex, after.revision.hex)
     }
 
+    /**
+     * The write loop the checkin environment performs: mark, stage explicitly,
+     * commit, and end up with a clean tree at a new revision.
+     */
+    @Test
+    fun `stage and commit advances the revision and leaves the tree clean`() {
+        repository.resolve("g.txt").writeText("committed")
+
+        LoreStatusApi.markDirty(repository, listOf("g.txt"))
+        LoreWriteApi.stage(repository, listOf("g.txt"))
+        LoreWriteApi.commit(repository, "add g.txt")
+
+        val status = LoreStatusApi.status(repository, scan = true)
+
+        assertTrue("expected a clean tree, got ${status.files}", status.files.isEmpty())
+        assertEquals(1L, status.revision!!.revisionNumber)
+    }
+
+    @Test
+    fun `renames are recorded as moves`() {
+        repository.resolve("h.txt").writeText("movable")
+        LoreWriteApi.stage(repository, listOf("h.txt"))
+        LoreWriteApi.commit(repository, "add h.txt")
+
+        Files.move(repository.resolve("h.txt"), repository.resolve("i.txt"))
+        LoreWriteApi.stageMove(repository, "h.txt", "i.txt")
+
+        val moved = LoreStatusApi.status(repository).files.single { it.path == "i.txt" }
+
+        assertEquals(LoreFileAction.MOVE, moved.action)
+        assertEquals("h.txt", moved.fromPath)
+    }
+
     @Test
     fun `hashing reports content addresses`() {
         repository.resolve("d.txt").writeText("addressable")
