@@ -56,6 +56,9 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private var all: List<LogRow> = emptyList()
 
+    // After `all`, which its filter callback reads.
+    private val filter = LogFilter()
+
     override fun initTabContent(content: Content) {
         table.apply {
             setShowGrid(false)
@@ -102,7 +105,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                             .component,
                         BorderLayout.WEST,
                     )
-                    add(LogFilter(), BorderLayout.EAST)
+                    add(filter, BorderLayout.EAST)
                 },
                 BorderLayout.NORTH,
             )
@@ -123,7 +126,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             }
             ApplicationManager.getApplication().invokeLater {
                 all = entries
-                model.items = entries
+                applyFilter(filter.filter ?: "")
                 loading.stopLoading()
             }
         }
