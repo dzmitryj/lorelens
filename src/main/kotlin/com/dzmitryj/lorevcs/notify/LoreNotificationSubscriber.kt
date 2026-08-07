@@ -84,6 +84,10 @@ class LoreNotificationSubscriber(private val project: Project) : Disposable {
             .notify(project)
     }
 
+    fun stop() {
+        running.clear()
+    }
+
     override fun dispose() {
         running.clear()
     }

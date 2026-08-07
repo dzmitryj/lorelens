@@ -6,6 +6,7 @@ import com.dzmitryj.lorevcs.checkin.LoreCheckinEnvironment
 import com.dzmitryj.lorevcs.checkin.LoreRollbackEnvironment
 import com.dzmitryj.lorevcs.checkin.LoreVfsListenerService
 import com.dzmitryj.lorevcs.lock.LoreEditFileProvider
+import com.dzmitryj.lorevcs.notify.LoreNotificationSubscriber
 import com.dzmitryj.lorevcs.update.LoreUpdateEnvironment
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.AbstractVcs
@@ -43,10 +44,15 @@ class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
 
     override fun activate() {
         LoreVfsListenerService.getInstance(myProject).start()
+        // Without this the lock cache is only ever refreshed by hand, so the
+        // lock banner cannot appear until the user has already refreshed -- and
+        // the banner is the only thing offering that refresh.
+        LoreNotificationSubscriber.getInstance(myProject).start()
     }
 
     override fun deactivate() {
         LoreVfsListenerService.getInstance(myProject).stop()
+        LoreNotificationSubscriber.getInstance(myProject).stop()
     }
 
     /** `lore link` pins one repository inside another. */
