@@ -75,3 +75,6 @@ data class LoreRepositoryStatus(
 )
 
 data class LoreFileHash(val path: String, val size: Long, val hash: LoreRevisionId)
+
+/** [path] is repository-relative; [owner] is a Lore user id. */
+data class LoreLock(val path: String, val owner: String, val lockedAt: Long)
