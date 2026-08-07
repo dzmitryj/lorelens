@@ -38,11 +38,16 @@ object LoreSyncApi {
      * working directories of one project on a machine, a shared
      * content-addressed store is the difference between hundreds of gigabytes
      * and terabytes.
+     *
+     * @param viewFilterFile path to a client-side view filter file, which is the
+     *   only point at which v0.8.6 accepts one. There is no API to read or
+     *   change the view of an existing checkout.
      */
     fun clone(
         destination: Path,
         url: String,
         useSharedStore: Boolean = true,
+        viewFilterFile: String = "",
         observer: ((LoreEvent) -> Unit)? = null,
     ): LoreResult = Arena.ofConfined().use { arena ->
         val args = LoreArgs(arena)
@@ -50,6 +55,9 @@ object LoreSyncApi {
         val options = arena.allocate(lore_repository_clone_args_t.LAYOUT)
         args.writeString(lore_repository_clone_args_t.repository_url(options), url)
         lore_repository_clone_args_t.use_shared_store(options, if (useSharedStore) 1 else 0)
+        if (viewFilterFile.isNotEmpty()) {
+            args.writeString(lore_repository_clone_args_t.view(options), viewFilterFile)
+        }
 
         LoreClient.require(
             EventPump.call(arena, observer) { callback ->

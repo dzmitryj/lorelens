@@ -69,7 +69,7 @@ class LoreCreateRepositoryAction : AnAction() {
         private val directoryField = TextFieldWithBrowseButton().apply {
             addBrowseFolderListener(
                 project,
-                FileChooserDescriptorFactory.createSingleFolderDescriptor()
+                FileChooserDescriptorFactory.singleDir()
                     .withTitle(LoreBundle.message("clone.directory.title")),
             )
         }
