@@ -68,6 +68,25 @@ abstract class FetchLoreNativeTask : DefaultTask() {
         }
 
         writeHeaderOnce(out, release)
+        fetchSource(release, cache, out)
+    }
+
+    // The general library error codes are not exported by lore.h; they live in
+    // this Rust file as #[ffi_code(N)] attributes.
+    private fun fetchSource(release: LoreRelease, cache: File, out: File) {
+        val source = release.errorCodes
+        val name = source.path.substringAfterLast('/')
+        val cached = cache.resolve(name)
+
+        if (!cached.isFile || sha256(cached) != source.sha256) {
+            download(release.sourceUrl(source), cached)
+        }
+        val actual = sha256(cached)
+        if (actual != source.sha256) {
+            cached.delete()
+            error("Checksum mismatch for ${source.path}: expected ${source.sha256}, got $actual")
+        }
+        cached.copyTo(out.resolve(name), overwrite = true)
     }
 
     private fun download(url: String, target: File) {

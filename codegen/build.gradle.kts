@@ -29,5 +29,9 @@ tasks.register<JavaExec>("generateLoreBindings") {
     dependsOn(":fetchLoreNative")
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "lore.codegen.MainKt"
-    args(nativeDir.resolve("lore.h").absolutePath, generatedDir.absolutePath)
+    args(
+        nativeDir.resolve("lore.h").absolutePath,
+        nativeDir.resolve("error.rs").absolutePath,
+        generatedDir.absolutePath,
+    )
 }

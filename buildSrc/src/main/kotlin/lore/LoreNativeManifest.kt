@@ -10,13 +10,19 @@ data class LoreAsset(
     val library: String,
 )
 
+data class LoreSource(val path: String, val sha256: String)
+
 data class LoreRelease(
     val version: String,
     val interfaceVersion: String,
     val assets: List<LoreAsset>,
+    val errorCodes: LoreSource,
 ) {
     fun downloadUrl(asset: LoreAsset): String =
         "https://github.com/EpicGames/lore/releases/download/$version/${asset.file}"
+
+    fun sourceUrl(source: LoreSource): String =
+        "https://raw.githubusercontent.com/EpicGames/lore/$version/${source.path}"
 }
 
 object LoreNativeManifest {
@@ -39,10 +45,13 @@ object LoreNativeManifest {
             )
         }
 
+        val errorCodes = entry["errorCodes"] as Map<String, String>
+
         return LoreRelease(
             version = version,
             interfaceVersion = entry["interfaceVersion"] as String,
             assets = assets.sortedBy { it.platform },
+            errorCodes = LoreSource(errorCodes.getValue("path"), errorCodes.getValue("sha256")),
         )
     }
 }

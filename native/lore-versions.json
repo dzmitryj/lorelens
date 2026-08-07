@@ -1,6 +1,10 @@
 {
   "v0.8.6": {
     "interfaceVersion": "0.8.6",
+    "errorCodes": {
+      "path": "lore-base/src/error.rs",
+      "sha256": "b21d7d6535f14b85d836482a64320deb03e475b46807f43b0c4070db32432253"
+    },
     "assets": {
       "win-x64": {
         "file": "liblore-v0.8.6-x86_64-pc-windows-msvc.zip",

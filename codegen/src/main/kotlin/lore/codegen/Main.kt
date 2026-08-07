@@ -3,11 +3,12 @@ package lore.codegen
 import java.io.File
 
 fun main(args: Array<String>) {
-    require(args.size >= 2) { "usage: codegen <lore.h> <outputDir>" }
+    require(args.size >= 3) { "usage: codegen <lore.h> <error.rs> <outputDir>" }
 
     val header = HeaderParser.parse(File(args[0]).readText())
     val types = TypeMapper(header)
-    val output = File(args[1])
+    val errorCodes = ErrorCodeParser.parse(File(args[1]).readText())
+    val output = File(args[2])
 
     output.mkdirs()
     output.listFiles()?.forEach { it.delete() }
@@ -16,6 +17,7 @@ fun main(args: Array<String>) {
         "LoreEnums.kt" to EnumEmitter(header).emit(),
         "LoreLayouts.kt" to LayoutEmitter(header, types).emit(),
         "LoreFunctions.kt" to FunctionEmitter(header, types).emit(),
+        "LoreStatus.kt" to ErrorCodeEmitter(header.interfaceVersion, errorCodes).emit(),
     )
 
     files.forEach { (name, content) ->
