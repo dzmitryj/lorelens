@@ -1,201 +1,94 @@
-# LoreVersionControl
+# Lore Version Control
 
-[![Twitter Follow](https://img.shields.io/badge/follow-%40JBPlatform-1DA1F2?logo=twitter)](https://twitter.com/JBPlatform)
-[![Developers Forum](https://img.shields.io/badge/JetBrains%20Platform-Join-blue)][jb:forum]
+Version control integration for [Lore](https://lore.org), Epic Games' open-source version control system for
+repositories that mix source code with large binary assets.
 
-## Connect repository to GitHub
+> Not affiliated with or endorsed by Epic Games. Bundles the Lore shared library, which is MIT licensed.
 
-1. [Create a new repository](https://github.com/new) on GitHub.
-2. Run the following commands to initialize and push this project to the repository created in step 1:
+## Why this exists
+
+Lore's `status` deliberately performs no filesystem walk. It reports the files it has been *told* changed, and
+reconciling the whole tree is an explicit, expensive operation — on an asset repository, the difference between
+instant and minutes.
+
+An IDE knows precisely which files it touched, the moment it touches them. This plugin feeds that straight into
+Lore, so the Changes view stays accurate without ever scanning the repository. No other client is positioned to
+do that as well.
+
+## Features
+
+- **Changes view** driven by Lore's own dirty set, with gutter markers and diff against the current revision
+- **Automatic dirty marking** as you edit, with an explicit Full Rescan when you want reconciliation
+- **Commit, revert, and push**, with push-after-commit on by default — in a centralized VCS an unpushed commit
+  is a half-finished action
+- **Rename tracking**, using Lore's first-class move support rather than reporting an add plus a delete
+- **File locking**: editing a read-only file acquires its lock, files held by others are read-only with a banner
+  naming the holder, and the status bar shows branch, revision, and locks held
+- **Clone and sync**, including a client-side view filter at clone time
+- **`.loreignore`** with syntax highlighting, comment toggling and the platform's ignore inspections
+- **Lore Log** tab listing revisions and commit messages
+
+## Requirements
+
+- IntelliJ Platform 2026.1 or later. The plugin binds Lore's C API through `java.lang.foreign`, which is a
+  preview API before JBR 25.
+- A Lore server. Lore is centralized: cloning an existing repository needs a URL, and creating one needs a
+  server to create it on. You can run `loreserver` yourself — it starts from built-in defaults with no
+  configuration.
+
+The Lore shared library is bundled for Windows x64, Linux x64, Linux arm64 and macOS arm64. Epic publishes no
+macOS x64 build, so Intel Macs are not supported.
+
+## Development
 
 ```bash
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/<username>/<repository>.git
-git push -u origin main
+./gradlew buildPlugin
 ```
 
-3. Configure publishing [secrets](https://docs.github.com/en/actions/security-guides/encrypted-secrets) in the GitHub
-   repository settings:
+`liblore` and `lore.h` are downloaded from the pinned release tag, verified against the checksums in
+`native/lore-versions.json`, and bundled at package time. Binaries are never committed.
 
-| Secret                 | Description                                                                                                |
-|------------------------|------------------------------------------------------------------------------------------------------------|
-| `PUBLISH_TOKEN`        | JetBrains Marketplace token — [generate here](https://plugins.jetbrains.com/author/me/tokens)              |
-| `CERTIFICATE_CHAIN`    | Plugin signing certificate chain ([docs](https://plugins.jetbrains.com/docs/intellij/plugin-signing.html)) |
-| `PRIVATE_KEY`          | Plugin signing private key                                                                                 |
-| `PRIVATE_KEY_PASSWORD` | Password for the private key                                                                               |
+The FFM bindings in `src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated` are generated from `lore.h` and
+checked in, so their diffs are reviewable when Lore changes:
 
-## Overview
-
-This repository implements an IntelliJ Platform plugin.
-
-## Demo Functionality
-
-The sample plugin adds a `My Tool Window` tool window with a simple functionality of shuffling a random number.
-
-## Plugin structure
-
-A generated project contains the following content structure:
-
-```
-.
-├── .github/                GitHub Workflows, issue templates, and Dependabot configuration
-├── .run/                   Predefined Run/Debug Configurations
-├── gradle
-│   ├── wrapper/            Gradle Wrapper
-│   ├── libs.versions.toml  Version catalog
-├── src                     Plugin sources
-│   └── main
-│       ├── kotlin/         Kotlin production sources
-│       └── resources/      Plugin resources
-│           ├── META-INF/   Plugin configuration file and logo
-│           └── messages/   Message bundles
-├── .gitignore              Git ignoring rules
-├── build.gradle.kts        Gradle build configuration
-├── gradle.properties       Gradle configuration properties
-├── gradlew                 *nix Gradle Wrapper script
-├── gradlew.bat             Windows Gradle Wrapper script
-├── README.md               This file
-└── settings.gradle.kts     Gradle project settings
+```bash
+./gradlew :codegen:generateLoreBindings
 ```
 
-In addition to the configuration files, the most crucial part is the `src` directory, which contains our implementation
-and the manifest for our plugin – [plugin.xml][file:plugin.xml].
+Generated struct layouts are inferred from field types, which is not an error if it is wrong — it is a silently
+wrong read. A generated C probe checks `sizeof`, `_Alignof` and `offsetof` for every struct against the real
+compiler, and CI runs it on all three platforms.
 
-> [!NOTE]
-> To use Java in your plugin, create the `/src/main/java` directory.
+`.github/workflows/upstream.yml` watches for new Lore releases and opens a pull request carrying the ABI diff.
 
-The plugin logo is placed in `src/main/resources/META-INF/pluginIcon.svg`. See [Plugin Logo][docs:logo] for more
-information and logo requirements.
+### Verifying against the oldest supported IDE
 
-## Build script
+The plugin compiles against 2026.2 but declares `sinceBuild = 261`, so check an installed IDE at the low end of
+that range before releasing:
 
-The [build.gradle.kts][file:build.gradle.kts] is the core of the project definition. It applies three Gradle plugins:
-
-| Plugin                            | Description                                                                      |
-|-----------------------------------|----------------------------------------------------------------------------------|
-| `org.jetbrains.kotlin.jvm`        | Adds Kotlin support                                                              |
-| `org.jetbrains.changelog`         | Simplifies patching the [CHANGELOG.md][file:CHANGELOG.md] file                   |
-| `org.jetbrains.intellij.platform` | The [IntelliJ Platform Gradle Plugin][docs:intellij-platform-gradle-plugin-docs] |
-
-The `intellijPlatform` dependencies block selects the IDE to compile against:
-
-```kotlin
-intellijIdea("2025.3.5")
+```bash
+./gradlew verifyPlugin -PverifyAgainstIde="C:\Users\you\AppData\Local\Programs\Rider"
 ```
 
-See [Target Versions][docs:target-version] for more information.
+### Publishing
 
-The `intellijPlatform` dependencies block also contains a dependency on the platform testing framework:
+The first version must be uploaded manually through the Marketplace web UI and passes human moderation;
+`publishPlugin` only works for later versions of an already-approved plugin. After that, `release.yml` signs and
+publishes on a GitHub release, using the `PUBLISH_TOKEN`, `CERTIFICATE_CHAIN`, `PRIVATE_KEY` and
+`PRIVATE_KEY_PASSWORD` secrets.
 
-```kotlin
-testFramework(TestFrameworkType.Platform)
+Verify signing locally before trusting CI — the private key must be PKCS#8, and a PKCS#1 key fails with an
+unhelpful error:
+
+```bash
+./gradlew signPlugin
 ```
 
-See [Testing][docs:testing] for more information
+### Tests
 
-## Plugin configuration file
+```bash
+./gradlew check
+```
 
-The plugin configuration file is a [plugin.xml][file:plugin.xml] file located in the `src/main/resources/META-INF`
-directory. It provides general information about the plugin, its dependencies, extensions, and listeners.
-
-You can read more about this file in the [Plugin Configuration File][docs:plugin.xml] section of our documentation.
-
-### Plugin ID and name
-
-Generated plugin ID and name may require adjustment.
-
-These values are generated based on _Group ID_ and _Artifact ID_ provided in the IDE Plugin wizard. It is recommended to
-review `<id>` and `<name>` elements in the plugin.xml file, and adjust them if needed.
-
-Please note that Gradle properties `rootProject.name` and `project.group` don't need to match the `<id>` and `<name>`
-elements. There is no IntelliJ Platform-related reason they should as they serve different functions.
-
-## Predefined Run/Debug configurations
-
-Within the default project structure, there is a `.run` directory provided containing predefined *Run/Debug
-configurations* that expose corresponding Gradle tasks:
-
-| Configuration name  | Description                                                                                                                                                                           |
-|---------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Run IDE with Plugin | Runs [`:runIde`][docs:intellij-platform-gradle-plugin-runIde] IntelliJ Platform Gradle Plugin task. Use the *Debug* icon for plugin debugging.                                        |
-| Run Tests           | Runs [`:check`][gradle:lifecycle-tasks] Gradle task.                                                                                                                                  |
-| Run Verifications   | Runs [`:verifyPlugin`][docs:intellij-platform-gradle-plugin-verifyPlugin] IntelliJ Platform Gradle Plugin task to check the plugin compatibility against the specified IntelliJ IDEs. |
-
-> [!NOTE]
-> You can find the logs from the running task in the `idea.log` tab.
-
-## Publishing the plugin
-
-> [!TIP]
-> Make sure to follow all guidelines listed in [Publishing a Plugin][docs:publishing] to follow all recommended and
-required steps.
-
-Releasing a plugin to [JetBrains Marketplace](https://plugins.jetbrains.com) is a straightforward operation that uses
-the `publishPlugin` Gradle task provided by
-the [intellij-platform-gradle-plugin][docs:intellij-platform-gradle-plugin-docs].
-
-You can also upload the plugin to the [JetBrains Plugin Repository](https://plugins.jetbrains.com/plugin/upload)
-manually via UI.
-
-## GitHub Integration
-
-### GitHub Actions
-
-The project includes [GitHub Actions][https://docs.github.com/en/actions] workflows for automated CI/CD:
-
-| Workflow                                 | Trigger        | Description                                                     |
-|------------------------------------------|----------------|-----------------------------------------------------------------|
-| [Build](.github/workflows/build.yml)     | Push / PR      | Builds, tests, and verifies the plugin; creates a draft release |
-| [Release](.github/workflows/release.yml) | GitHub Release | Publishes the plugin to JetBrains Marketplace                   |
-
-### GitHub issue templates
-
-The project includes GitHub issue templates:
-
-- [Bug Report](.github/ISSUE_TEMPLATE/bug-report.yml)
-- [Feature Request](.github/ISSUE_TEMPLATE/feature-request.yml)
-
-See [Syntax for issue forms](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms).
-
-### Dependabot
-
-[Dependabot configuration](.github/dependabot.yml) file enables tracking outdated or vulnerable dependencies.
-
-## Useful links
-
-- [IntelliJ Platform SDK Plugin SDK][docs]
-- [IntelliJ Platform Gradle Plugin Documentation][docs:intellij-platform-gradle-plugin-docs]
-- [IntelliJ Platform Explorer][jb:ipe]
-- [JetBrains Marketplace Quality Guidelines][jb:quality-guidelines]
-- [IntelliJ Platform UI Guidelines][jb:ui-guidelines]
-- [JetBrains Marketplace Paid Plugins][jb:paid-plugins]
-- [IntelliJ SDK Code Samples][gh:code-samples]
-
-[docs]: https://plugins.jetbrains.com/docs/intellij
-[docs:plugin.xml]: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html?from=IJPluginReadmeFile
-[docs:publishing]: https://plugins.jetbrains.com/docs/intellij/publishing-plugin.html?from=IJPluginReadmeFile
-[docs:intellij-platform-gradle-plugin-docs]: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin.html?from=IJPluginReadmeFile
-[docs:intellij-platform-gradle-plugin-runIde]: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-tasks.html?from=IJPluginReadmeFile#runIde
-[docs:intellij-platform-gradle-plugin-verifyPlugin]: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-tasks.html?from=IJPluginReadmeFile#verifyPlugin
-[docs:logo]: https://plugins.jetbrains.com/docs/intellij/plugin-icon-file.html?from=IJPluginReadmeFile
-[docs:target-version]: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html?from=IJPluginReadmeFile#target-versions
-[docs:testing]: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html?from=IJPluginReadmeFile#testing
-
-[file:build.gradle.kts]: ./build.gradle.kts
-[file:CHANGELOG.md]: ./CHANGELOG.md
-[file:gradle.properties]: ./gradle.properties
-[file:plugin.xml]: ./src/main/resources/META-INF/plugin.xml
-
-[gh:code-samples]: https://github.com/JetBrains/intellij-sdk-code-samples
-
-[gradle:lifecycle-tasks]: https://docs.gradle.org/current/userguide/java_plugin.html#lifecycle_tasks
-
-[jb:github]: https://github.com/JetBrains/.github/blob/main/profile/README.md
-[jb:forum]: https://platform.jetbrains.com/
-[jb:quality-guidelines]: https://plugins.jetbrains.com/docs/marketplace/quality-guidelines.html
-[jb:paid-plugins]: https://plugins.jetbrains.com/docs/marketplace/paid-plugins-marketplace.html
-[jb:ipe]: https://jb.gg/ipe
-[jb:ui-guidelines]: https://jetbrains.github.io/ui
+Integration tests start a real `loreserver` on loopback and drive real repositories, so they need no external
+server. They skip automatically on platforms Lore does not publish a server for.
