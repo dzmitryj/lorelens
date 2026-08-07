@@ -5,6 +5,7 @@ import com.dzmitryj.lorelens.changes.LoreDiffProvider
 import com.dzmitryj.lorelens.checkin.LoreCheckinEnvironment
 import com.dzmitryj.lorelens.checkin.LoreRollbackEnvironment
 import com.dzmitryj.lorelens.checkin.LoreVfsListenerService
+import com.dzmitryj.lorelens.history.LoreHistoryProvider
 import com.dzmitryj.lorelens.lock.LoreEditFileProvider
 import com.dzmitryj.lorelens.notify.LoreNotificationSubscriber
 import com.dzmitryj.lorelens.update.LoreUpdateEnvironment
@@ -16,6 +17,7 @@ import com.intellij.openapi.vcs.VcsKey
 import com.intellij.openapi.vcs.changes.ChangeProvider
 import com.intellij.openapi.vcs.checkin.CheckinEnvironment
 import com.intellij.openapi.vcs.diff.DiffProvider
+import com.intellij.openapi.vcs.history.VcsHistoryProvider
 import com.intellij.openapi.vcs.rollback.RollbackEnvironment
 import com.intellij.openapi.vcs.update.UpdateEnvironment
 
@@ -27,12 +29,15 @@ class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
     private val rollbackEnvironment = LoreRollbackEnvironment(project)
     private val editFileProvider = LoreEditFileProvider(project)
     private val updateEnvironment = LoreUpdateEnvironment()
+    private val historyProvider = LoreHistoryProvider(project)
 
     override fun getDisplayName(): String = LoreLensBundle.message("vcs.name")
 
     override fun getChangeProvider(): ChangeProvider = changeProvider
 
     override fun getDiffProvider(): DiffProvider = diffProvider
+
+    override fun getVcsHistoryProvider(): VcsHistoryProvider = historyProvider
 
     override fun createCheckinEnvironment(): CheckinEnvironment = checkinEnvironment
 
