@@ -18,11 +18,15 @@
         <writingAccessProvider implementation="com.dzmitryj.lorevcs.lock.LoreWritingAccessProvider"/>
         <statusBarWidgetFactory id="LoreStatusBarWidget"
                                 implementation="com.dzmitryj.lorevcs.ui.LoreStatusBarWidgetFactory"/>
+        <checkoutProvider implementation="com.dzmitryj.lorevcs.update.LoreCheckoutProvider"/>
     </extensions>
 
     <actions>
         <action id="Lore.FullRescan" class="com.dzmitryj.lorevcs.dirty.LoreFullRescanAction">
             <add-to-group group-id="Vcs.Operations.Popup.VcsAware" anchor="last"/>
+        </action>
+        <action id="Lore.CreateRepository" class="com.dzmitryj.lorevcs.update.LoreCreateRepositoryAction">
+            <add-to-group group-id="Vcs.Import" anchor="last"/>
         </action>
     </actions>
 </idea-plugin>
