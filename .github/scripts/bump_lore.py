@@ -16,10 +16,10 @@ REPO = "EpicGames/lore"
 ERROR_SOURCE = "lore-base/src/error.rs"
 
 PLATFORMS = {
-    "win-x64": ("x86_64-pc-windows-msvc.zip", "lore.dll"),
-    "linux-x64": ("x86_64-unknown-linux-gnu.tar.gz", "liblore.so"),
-    "linux-arm64": ("aarch64-unknown-linux-gnu-neoverse-512tvb.tar.gz", "liblore.so"),
-    "mac-arm64": ("aarch64-apple-darwin.tar.gz", "liblore.dylib"),
+    "win-x64": ("x86_64-pc-windows-msvc.zip", "lore.dll", "loreserver.exe"),
+    "linux-x64": ("x86_64-unknown-linux-gnu.tar.gz", "liblore.so", "loreserver"),
+    "linux-arm64": ("aarch64-unknown-linux-gnu-neoverse-512tvb.tar.gz", "liblore.so", "loreserver"),
+    "mac-arm64": ("aarch64-apple-darwin.tar.gz", "liblore.dylib", "loreserver"),
 }
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -54,13 +54,26 @@ def main(tag: str) -> int:
     manifest = json.loads(MANIFEST.read_text())
 
     assets = {}
-    for platform, (suffix, library) in PLATFORMS.items():
+    servers = {}
+    for platform, (suffix, library, server_binary) in PLATFORMS.items():
         name = f"liblore-{tag}-{suffix}"
-        if name not in available:
-            print(f"Release {tag} has no asset named {name}", file=sys.stderr)
-            return 1
-        url = f"https://github.com/{REPO}/releases/download/{tag}/{name}"
-        assets[platform] = {"file": name, "sha256": sha256_of(url), "library": library}
+        server_name = f"loreserver-{tag}-{suffix}"
+        for required in (name, server_name):
+            if required not in available:
+                print(f"Release {tag} has no asset named {required}", file=sys.stderr)
+                return 1
+
+        base = f"https://github.com/{REPO}/releases/download/{tag}"
+        assets[platform] = {
+            "file": name,
+            "sha256": sha256_of(f"{base}/{name}"),
+            "library": library,
+        }
+        servers[platform] = {
+            "file": server_name,
+            "sha256": sha256_of(f"{base}/{server_name}"),
+            "binary": server_binary,
+        }
 
     manifest[tag] = {
         "interfaceVersion": interface_version(tag),
@@ -70,6 +83,7 @@ def main(tag: str) -> int:
                 f"https://raw.githubusercontent.com/{REPO}/{tag}/{ERROR_SOURCE}"
             ),
         },
+        "server": servers,
         "assets": assets,
     }
 
