@@ -6,6 +6,7 @@ import com.dzmitryj.lorevcs.checkin.LoreCheckinEnvironment
 import com.dzmitryj.lorevcs.checkin.LoreRollbackEnvironment
 import com.dzmitryj.lorevcs.checkin.LoreVfsListenerService
 import com.dzmitryj.lorevcs.lock.LoreEditFileProvider
+import com.dzmitryj.lorevcs.update.LoreUpdateEnvironment
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.AbstractVcs
 import com.intellij.openapi.vcs.EditFileProvider
@@ -15,6 +16,7 @@ import com.intellij.openapi.vcs.changes.ChangeProvider
 import com.intellij.openapi.vcs.checkin.CheckinEnvironment
 import com.intellij.openapi.vcs.diff.DiffProvider
 import com.intellij.openapi.vcs.rollback.RollbackEnvironment
+import com.intellij.openapi.vcs.update.UpdateEnvironment
 
 class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
 
@@ -23,6 +25,7 @@ class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
     private val checkinEnvironment = LoreCheckinEnvironment(project)
     private val rollbackEnvironment = LoreRollbackEnvironment(project)
     private val editFileProvider = LoreEditFileProvider(project)
+    private val updateEnvironment = LoreUpdateEnvironment()
 
     override fun getDisplayName(): String = LoreBundle.message("vcs.name")
 
@@ -35,6 +38,8 @@ class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
     override fun createRollbackEnvironment(): RollbackEnvironment = rollbackEnvironment
 
     override fun getEditFileProvider(): EditFileProvider = editFileProvider
+
+    override fun createUpdateEnvironment(): UpdateEnvironment = updateEnvironment
 
     override fun activate() {
         LoreVfsListenerService.getInstance(myProject).start()
