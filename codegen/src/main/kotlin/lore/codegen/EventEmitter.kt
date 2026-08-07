@@ -110,7 +110,7 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
             appendLine(banner(header.interfaceVersion))
             appendLine("package $GENERATED_PACKAGE")
             appendLine()
-            appendLine("import com.dzmitryj.lorevcs.ffi.LoreCopy")
+            appendLine("import com.dzmitryj.lorelens.ffi.LoreCopy")
             appendLine("import java.lang.foreign.MemorySegment")
             appendLine("import java.lang.foreign.ValueLayout")
             appendLine()

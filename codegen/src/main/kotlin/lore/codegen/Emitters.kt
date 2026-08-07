@@ -1,6 +1,6 @@
 package lore.codegen
 
-const val GENERATED_PACKAGE = "com.dzmitryj.lorevcs.ffi.generated"
+const val GENERATED_PACKAGE = "com.dzmitryj.lorelens.ffi.generated"
 
 private val KOTLIN_KEYWORDS = setOf(
     "as", "break", "class", "continue", "do", "else", "false", "for", "fun", "if", "in",
@@ -122,7 +122,7 @@ class FunctionEmitter(private val header: CHeader, private val types: TypeMapper
         appendLine(banner(header.interfaceVersion))
         appendLine("package $GENERATED_PACKAGE")
         appendLine()
-        appendLine("import com.dzmitryj.lorevcs.ffi.LoreLinker")
+        appendLine("import com.dzmitryj.lorelens.ffi.LoreLinker")
         appendLine("import java.lang.foreign.FunctionDescriptor")
         appendLine("import java.lang.foreign.MemoryLayout")
         appendLine("import java.lang.foreign.ValueLayout")

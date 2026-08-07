@@ -1,0 +1,130 @@
+package com.dzmitryj.lorelens.dirty
+
+import com.dzmitryj.lorelens.LoreLensBundle
+import com.dzmitryj.lorelens.api.LoreStatusApi
+import com.dzmitryj.lorelens.ffi.LoreNativeUnavailableException
+import com.dzmitryj.lorelens.repo.LoreRootFinder
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.util.Alarm
+import com.intellij.vcsUtil.VcsUtil
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Coalesces IDE edits into batched dirty marks.
+ *
+ * Lore's status performs no filesystem walk; it trusts its dirty flags. The IDE
+ * knows exactly which files it touched, so feeding that in keeps status both
+ * correct and near-instant on a repository where a scan would take minutes.
+ */
+@Service(Service.Level.PROJECT)
+class LoreDirtyMarkQueue(private val project: Project) : Disposable {
+
+    private val log = logger<LoreDirtyMarkQueue>()
+    private val alarm = Alarm(Alarm.ThreadToUse.POOLED_THREAD, this)
+
+    /** Repository root path to the repository-relative paths awaiting a mark. */
+    private val pending = ConcurrentHashMap<VirtualFile, MutableSet<String>>()
+    private val consecutiveFailures = AtomicInteger()
+    private val nativeReported = AtomicBoolean()
+
+    fun enqueue(files: Collection<VirtualFile>) {
+        val settings = LoreDirtySettings.getInstance()
+        if (!settings.markEditsDirty) return
+
+        var queued = false
+        files.forEach { file ->
+            val root = LoreRootFinder.findRoot(file) ?: return@forEach
+            val relative = LoreRootFinder.relativePath(root, file) ?: return@forEach
+            pending.computeIfAbsent(root) { ConcurrentHashMap.newKeySet() } += relative
+            queued = true
+        }
+        if (!queued) return
+
+        alarm.cancelAllRequests()
+        alarm.addRequest(::flush, settings.debounceMillis)
+    }
+
+    fun flush() {
+        val settings = LoreDirtySettings.getInstance()
+        if (!settings.markEditsDirty) {
+            pending.clear()
+            return
+        }
+
+        pending.keys.toList().forEach { root ->
+            val paths = pending.remove(root)?.toList().orEmpty()
+            if (paths.isEmpty()) return@forEach
+            markRoot(root, paths, settings.maxBatchSize)
+        }
+    }
+
+    private fun markRoot(root: VirtualFile, paths: List<String>, maxBatchSize: Int) {
+        try {
+            paths.chunked(maxBatchSize).forEach { batch ->
+                LoreStatusApi.markDirty(root.toNioPath(), batch)
+            }
+            consecutiveFailures.set(0)
+
+            val filePaths = paths.map { VcsUtil.getFilePath(root.toNioPath().resolve(it).toFile(), false) }
+            VcsDirtyScopeManager.getInstance(project).filePathsDirty(filePaths, null)
+        } catch (e: RuntimeException) {
+            onFailure(root, e)
+        }
+    }
+
+    /**
+     * A dirty marker that fails quietly is worse than none: the user would trust
+     * an incomplete status and commit a partial change set. So after repeated
+     * failures this turns itself off and says so.
+     */
+    private fun onFailure(root: VirtualFile, e: RuntimeException) {
+        log.warn("Failed to mark files dirty in ${root.path}", e)
+
+        // An unavailable library breaks every operation, not just marking, and
+        // is fixed by reinstalling rather than by the user. Report it, but do
+        // not persist the setting off -- that would outlive the fix.
+        if (e is LoreNativeUnavailableException) {
+            if (nativeReported.compareAndSet(false, true)) {
+                notify(LoreLensBundle.message("native.unavailable.title"), e.message.orEmpty())
+            }
+            pending.clear()
+            return
+        }
+
+        if (consecutiveFailures.incrementAndGet() < FAILURE_LIMIT) return
+
+        LoreDirtySettings.getInstance().markEditsDirty = false
+        pending.clear()
+        notify(
+            LoreLensBundle.message("dirty.disabled.title"),
+            LoreLensBundle.message("dirty.disabled.message", root.presentableUrl),
+        )
+    }
+
+    private fun notify(title: String, message: String) {
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup("LoreLens")
+            .createNotification(title, message, NotificationType.ERROR)
+            .notify(project)
+    }
+
+    override fun dispose() {
+        pending.clear()
+    }
+
+    companion object {
+        private const val FAILURE_LIMIT = 3
+
+        fun getInstance(project: Project): LoreDirtyMarkQueue = project.service()
+    }
+}

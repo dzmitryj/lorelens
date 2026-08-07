@@ -26,7 +26,7 @@ dependencies {
     }
 }
 
-val pluginDisplayName = "Lore Version Control"
+val pluginDisplayName = "LoreLens"
 val pinnedLoreVersion = providers.gradleProperty("loreVersion").get()
 val verifyAgainstIde = providers.gradleProperty("verifyAgainstIde").orNull
 val loreNativeDir = layout.buildDirectory.dir("lore-native/$pinnedLoreVersion")

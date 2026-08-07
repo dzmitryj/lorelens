@@ -1,6 +1,6 @@
 <!-- Keep a Changelog guide -> https://keepachangelog.com -->
 
-# Lore Version Control Changelog
+# LoreLens Changelog
 
 ## [Unreleased]
 

@@ -1,27 +1,27 @@
 <idea-plugin>
-    <id>com.dzmitryj.LoreVersionControl</id>
-    <name>LoreVersionControl</name>
+    <id>com.dzmitryj.lorelens</id>
+    <name>LoreLens</name>
     <dependencies>
         <plugin id="com.intellij.modules.vcs"/>
     </dependencies>
 
-    <resource-bundle>messages.LoreBundle</resource-bundle>
+    <resource-bundle>messages.LoreLensBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <vcs name="Lore" vcsClass="com.dzmitryj.lorevcs.LoreVcs" displayName="Lore"
+        <vcs name="LoreLens" vcsClass="com.dzmitryj.lorelens.LoreVcs" displayName="LoreLens"
              administrativeAreaName=".lore" areChildrenValidMappings="true"/>
-        <vcsRootChecker implementation="com.dzmitryj.lorevcs.repo.LoreRootChecker"/>
-        <vfs.asyncListener implementation="com.dzmitryj.lorevcs.dirty.LoreAsyncFileListener"/>
-        <postStartupActivity implementation="com.dzmitryj.lorevcs.dirty.LoreStartupRescan"/>
-        <notificationGroup id="Lore" displayType="BALLOON" bundle="messages.LoreBundle" key="vcs.name"/>
-        <editorNotificationProvider implementation="com.dzmitryj.lorevcs.lock.LoreLockBanner"/>
-        <writingAccessProvider implementation="com.dzmitryj.lorevcs.lock.LoreWritingAccessProvider"/>
-        <statusBarWidgetFactory id="LoreStatusBarWidget"
-                                implementation="com.dzmitryj.lorevcs.ui.LoreStatusBarWidgetFactory"/>
-        <checkoutProvider implementation="com.dzmitryj.lorevcs.update.LoreCheckoutProvider"/>
-        <ignoredFileContentProvider implementation="com.dzmitryj.lorevcs.ignore.LoreIgnoredFileContentProvider"/>
+        <vcsRootChecker implementation="com.dzmitryj.lorelens.repo.LoreRootChecker"/>
+        <vfs.asyncListener implementation="com.dzmitryj.lorelens.dirty.LoreAsyncFileListener"/>
+        <postStartupActivity implementation="com.dzmitryj.lorelens.dirty.LoreStartupRescan"/>
+        <notificationGroup id="LoreLens" displayType="BALLOON" bundle="messages.LoreLensBundle" key="vcs.name"/>
+        <editorNotificationProvider implementation="com.dzmitryj.lorelens.lock.LoreLockBanner"/>
+        <writingAccessProvider implementation="com.dzmitryj.lorelens.lock.LoreWritingAccessProvider"/>
+        <statusBarWidgetFactory id="LoreLensStatusBarWidget"
+                                implementation="com.dzmitryj.lorelens.ui.LoreStatusBarWidgetFactory"/>
+        <checkoutProvider implementation="com.dzmitryj.lorelens.update.LoreCheckoutProvider"/>
+        <ignoredFileContentProvider implementation="com.dzmitryj.lorelens.ignore.LoreIgnoredFileContentProvider"/>
         <fileType name="LoreIgnore file" language="LoreIgnore" fileNames=".loreignore" fieldName="INSTANCE"
-                  implementationClass="com.dzmitryj.lorevcs.ignore.LoreIgnoreFileType"/>
+                  implementationClass="com.dzmitryj.lorelens.ignore.LoreIgnoreFileType"/>
         <lang.parserDefinition language="LoreIgnore"
                                implementationClass="com.intellij.openapi.vcs.changes.ignore.lang.IgnoreParserDefinition"/>
         <lang.braceMatcher language="LoreIgnore"
@@ -30,16 +30,16 @@
                         implementationClass="com.intellij.openapi.vcs.changes.ignore.lang.IgnoreCommenter"/>
         <codeInsight.lineMarkerProvider language="LoreIgnore"
                                         implementationClass="com.intellij.openapi.vcs.changes.ignore.codeInsight.IgnoreDirectoryMarkerProvider"/>
-        <changesViewContent id="LoreLog" tabName="Lore Log"
-                            className="com.dzmitryj.lorevcs.ui.LoreLogTab"
-                            predicateClassName="com.dzmitryj.lorevcs.ui.LoreLogTabVisibility"/>
+        <changesViewContent id="LoreLensLog" tabName="LoreLens"
+                            className="com.dzmitryj.lorelens.ui.LoreLogTab"
+                            predicateClassName="com.dzmitryj.lorelens.ui.LoreLogTabVisibility"/>
     </extensions>
 
     <actions>
-        <action id="Lore.FullRescan" class="com.dzmitryj.lorevcs.dirty.LoreFullRescanAction">
+        <action id="LoreLens.FullRescan" class="com.dzmitryj.lorelens.dirty.LoreFullRescanAction">
             <add-to-group group-id="Vcs.Operations.Popup.VcsAware" anchor="last"/>
         </action>
-        <action id="Lore.CreateRepository" class="com.dzmitryj.lorevcs.update.LoreCreateRepositoryAction">
+        <action id="LoreLens.CreateRepository" class="com.dzmitryj.lorelens.update.LoreCreateRepositoryAction">
             <add-to-group group-id="Vcs.Import" anchor="last"/>
         </action>
     </actions>

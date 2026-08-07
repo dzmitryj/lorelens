@@ -65,9 +65,9 @@ jobs:
         if: steps.target.outputs.changed == 'true'
         run: |
           grep -oE '^    val lore_[a-z_]+' \
-            src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreFunctions.kt \
+            src/main/kotlin/com/dzmitryj/lorelens/ffi/generated/LoreFunctions.kt \
             | sed 's/^    val //' | sort > /tmp/symbols-before.txt
-          cp src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreStatus.kt /tmp/status-before.kt
+          cp src/main/kotlin/com/dzmitryj/lorelens/ffi/generated/LoreStatus.kt /tmp/status-before.kt
 
       # Downloads the new assets, checksums them, and rewrites the manifest so
       # the pinned hashes are part of the reviewed diff rather than trusted
@@ -98,7 +98,7 @@ jobs:
         id: diff
         run: |
           grep -oE '^    val lore_[a-z_]+' \
-            src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreFunctions.kt \
+            src/main/kotlin/com/dzmitryj/lorelens/ffi/generated/LoreFunctions.kt \
             | sed 's/^    val //' | sort > /tmp/symbols-after.txt
 
           {
@@ -112,12 +112,12 @@ jobs:
             echo
             echo "### Error codes"
             if diff -q /tmp/status-before.kt \
-                 src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreStatus.kt > /dev/null; then
+                 src/main/kotlin/com/dzmitryj/lorelens/ffi/generated/LoreStatus.kt > /dev/null; then
               echo "_unchanged_"
             else
               echo '```diff'
               diff -u /tmp/status-before.kt \
-                src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreStatus.kt || true
+                src/main/kotlin/com/dzmitryj/lorelens/ffi/generated/LoreStatus.kt || true
               echo '```'
             fi
             echo

@@ -1,4 +1,4 @@
-# Lore Version Control
+# LoreLens
 
 Version control integration for [Lore](https://lore.org), Epic Games' open-source version control system for
 repositories that mix source code with large binary assets.
@@ -48,7 +48,7 @@ macOS x64 build, so Intel Macs are not supported.
 `liblore` and `lore.h` are downloaded from the pinned release tag, verified against the checksums in
 `native/lore-versions.json`, and bundled at package time. Binaries are never committed.
 
-The FFM bindings in `src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated` are generated from `lore.h` and
+The FFM bindings in `src/main/kotlin/com/dzmitryj/lorelens/ffi/generated` are generated from `lore.h` and
 checked in, so their diffs are reviewable when Lore changes:
 
 ```bash
