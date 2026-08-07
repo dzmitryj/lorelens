@@ -3,12 +3,16 @@ package com.dzmitryj.lorelens.blame
 import com.dzmitryj.lorelens.dirty.LoreDirtySettings
 import com.dzmitryj.lorelens.model.LoreHistoryRecord
 import com.dzmitryj.lorelens.repo.LoreRootFinder
+import com.intellij.codeInsight.hint.HintManager
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorCustomElementRenderer
 import com.intellij.openapi.editor.Inlay
 import com.intellij.openapi.editor.event.CaretEvent
 import com.intellij.openapi.editor.event.CaretListener
+import com.intellij.openapi.editor.event.EditorMouseEvent
+import com.intellij.openapi.editor.event.EditorMouseMotionListener
 import com.intellij.openapi.editor.markup.TextAttributes
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -33,6 +37,10 @@ class LoreBlameHint(private val project: Project, private val editor: Editor) : 
     private val alarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, LoreBlameDisposable(editor))
     private var inlay: Inlay<*>? = null
     private var shownLine = -1
+
+    init {
+        editor.addEditorMouseMotionListener(HoverListener())
+    }
 
     override fun caretPositionChanged(event: CaretEvent) = schedule()
 
@@ -65,14 +73,15 @@ class LoreBlameHint(private val project: Project, private val editor: Editor) : 
             ApplicationManager.getApplication().invokeLater {
                 if (editor.isDisposed) return@invokeLater
                 if (editor.caretModel.logicalPosition.line != line) return@invokeLater
-                show(line, record)
+                show(line, HintContext(root.toNioPath(), relative, record))
             }
         }
     }
 
-    private fun show(line: Int, record: LoreHistoryRecord) {
+    private fun show(line: Int, context: HintContext) {
         val offset = editor.document.getLineEndOffset(line.coerceAtMost(editor.document.lineCount - 1))
-        inlay = editor.inlayModel.addAfterLineEndElement(offset, false, HintRenderer(describe(record)))
+        val renderer = HintRenderer(project, describe(context.record), context)
+        inlay = editor.inlayModel.addAfterLineEndElement(offset, false, renderer)
         shownLine = line
     }
 
@@ -88,7 +97,35 @@ class LoreBlameHint(private val project: Project, private val editor: Editor) : 
         record.subject?.let { append("  ").append(it) }
     }
 
-    private class HintRenderer(private val text: String) : EditorCustomElementRenderer {
+    /**
+     * The renderer interface has no tooltip hook, so hovering is hit-tested
+     * against the inlay by hand and answered with a hint.
+     */
+    private inner class HoverListener : EditorMouseMotionListener {
+
+        override fun mouseMoved(event: EditorMouseEvent) {
+            val current = inlay ?: return
+            if (editor.inlayModel.getElementAt(event.mouseEvent.point) !== current) return
+
+            val message = (current.renderer as? HintRenderer)?.context?.record?.message ?: return
+            HintManager.getInstance().showInformationHint(editor, message)
+        }
+    }
+
+    private class HintContext(
+        val root: Path,
+        val relativePath: String,
+        val record: LoreHistoryRecord,
+    )
+
+    private class HintRenderer(
+        private val project: Project,
+        private val text: String,
+        val context: HintContext,
+    ) : EditorCustomElementRenderer {
+
+        override fun getContextMenuGroup(inlay: Inlay<*>): ActionGroup =
+            loreBlameActions(project, context.root, context.relativePath, context.record)
 
         override fun calcWidthInPixels(inlay: Inlay<*>): Int =
             inlay.editor.contentComponent.getFontMetrics(font(inlay.editor)).stringWidth(padded())
