@@ -1,6 +1,7 @@
 package com.dzmitryj.lorevcs
 
 import com.dzmitryj.lorevcs.api.LoreClient
+import com.dzmitryj.lorevcs.api.LoreHistoryApi
 import com.dzmitryj.lorevcs.api.LoreLockApi
 import com.dzmitryj.lorevcs.api.LoreStatusApi
 import com.dzmitryj.lorevcs.api.LoreSyncApi
@@ -211,6 +212,19 @@ class LoreRepositoryIntegrationTest {
         LoreSyncApi.sync(clone)
 
         assertEquals("second", Files.readString(clone.resolve("k.txt")))
+    }
+
+    @Test
+    fun `history reports revisions with their commit messages`() {
+        repository.resolve("l.txt").writeText("historic")
+        LoreWriteApi.stage(repository, listOf("l.txt"))
+        LoreWriteApi.commit(repository, "a memorable message")
+
+        val history = LoreHistoryApi.history(repository)
+
+        assertEquals(1, history.size)
+        assertEquals(1L, history.single().number)
+        assertEquals("a memorable message", history.single().message)
     }
 
     @Test
