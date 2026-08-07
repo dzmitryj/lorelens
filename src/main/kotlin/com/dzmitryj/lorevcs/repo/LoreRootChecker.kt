@@ -53,9 +53,9 @@ class LoreRootChecker : VcsRootChecker() {
 
     override fun isVcsDir(dirName: String): Boolean = dirName.equals(LORE_DIRECTORY, ignoreCase = true)
 
+    // isRoot(String) is deprecated and unused by the platform: VcsRootDetectorImpl
+    // calls isRoot(VirtualFile) and VcsRootErrorsFinder calls validateRoot.
     override fun isRoot(file: VirtualFile): Boolean = isLoreRoot(file)
-
-    override fun isRoot(path: String): Boolean = isLoreRoot(Path.of(path))
 
     override fun validateRoot(file: VirtualFile): Boolean = isLoreRoot(file)
 }
