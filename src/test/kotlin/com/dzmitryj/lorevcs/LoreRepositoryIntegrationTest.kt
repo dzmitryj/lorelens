@@ -1,6 +1,7 @@
 package com.dzmitryj.lorevcs
 
 import com.dzmitryj.lorevcs.api.LoreClient
+import com.dzmitryj.lorevcs.api.LoreLockApi
 import com.dzmitryj.lorevcs.api.LoreStatusApi
 import com.dzmitryj.lorevcs.api.LoreWriteApi
 import com.dzmitryj.lorevcs.model.LoreFileAction
@@ -159,6 +160,26 @@ class LoreRepositoryIntegrationTest {
 
         assertEquals(LoreFileAction.MOVE, moved.action)
         assertEquals("h.txt", moved.fromPath)
+    }
+
+    @Test
+    fun `locks can be acquired, listed and released`() {
+        repository.resolve("j.txt").writeText("lockable")
+        LoreWriteApi.stage(repository, listOf("j.txt"))
+        LoreWriteApi.commit(repository, "add j.txt")
+
+        LoreLockApi.acquire(repository, listOf("j.txt"))
+
+        val held = LoreLockApi.query(repository)
+        assertTrue("expected j.txt among $held", held.any { it.path == "j.txt" })
+        assertTrue("expected a lock owner", held.first { it.path == "j.txt" }.owner.isNotEmpty())
+
+        LoreLockApi.release(repository, listOf("j.txt"))
+
+        assertTrue(
+            "expected no locks after release",
+            LoreLockApi.query(repository).none { it.path == "j.txt" },
+        )
     }
 
     @Test

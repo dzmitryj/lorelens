@@ -14,6 +14,10 @@
         <vfs.asyncListener implementation="com.dzmitryj.lorevcs.dirty.LoreAsyncFileListener"/>
         <postStartupActivity implementation="com.dzmitryj.lorevcs.dirty.LoreStartupRescan"/>
         <notificationGroup id="Lore" displayType="BALLOON" bundle="messages.LoreBundle" key="vcs.name"/>
+        <editorNotificationProvider implementation="com.dzmitryj.lorevcs.lock.LoreLockBanner"/>
+        <writingAccessProvider implementation="com.dzmitryj.lorevcs.lock.LoreWritingAccessProvider"/>
+        <statusBarWidgetFactory id="LoreStatusBarWidget"
+                                implementation="com.dzmitryj.lorevcs.ui.LoreStatusBarWidgetFactory"/>
     </extensions>
 
     <actions>
