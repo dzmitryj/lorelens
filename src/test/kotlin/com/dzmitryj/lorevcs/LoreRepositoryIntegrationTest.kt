@@ -3,6 +3,7 @@ package com.dzmitryj.lorevcs
 import com.dzmitryj.lorevcs.api.LoreClient
 import com.dzmitryj.lorevcs.api.LoreLockApi
 import com.dzmitryj.lorevcs.api.LoreStatusApi
+import com.dzmitryj.lorevcs.api.LoreSyncApi
 import com.dzmitryj.lorevcs.api.LoreWriteApi
 import com.dzmitryj.lorevcs.model.LoreFileAction
 import org.junit.After
@@ -91,8 +92,8 @@ class LoreRepositoryIntegrationTest {
     @Test
     fun `content at a revision is readable after a commit`() {
         repository.resolve("e.txt").writeText("original")
-        LoreTestRepository.stage(repository, listOf("e.txt"))
-        LoreTestRepository.commit(repository, "add e.txt")
+        LoreWriteApi.stage(repository, listOf("e.txt"))
+        LoreWriteApi.commit(repository, "add e.txt")
 
         repository.resolve("e.txt").writeText("edited")
         val status = LoreStatusApi.status(repository, scan = true)
@@ -114,8 +115,8 @@ class LoreRepositoryIntegrationTest {
     @Test
     fun `reset restores file content and leaves the revision alone`() {
         repository.resolve("f.txt").writeText("original")
-        LoreTestRepository.stage(repository, listOf("f.txt"))
-        LoreTestRepository.commit(repository, "add f.txt")
+        LoreWriteApi.stage(repository, listOf("f.txt"))
+        LoreWriteApi.commit(repository, "add f.txt")
 
         val before = LoreStatusApi.status(repository, scan = true).revision!!
 
@@ -180,6 +181,36 @@ class LoreRepositoryIntegrationTest {
             "expected no locks after release",
             LoreLockApi.query(repository).none { it.path == "j.txt" },
         )
+    }
+
+    /**
+     * The loop a second developer performs: clone what someone else pushed,
+     * then sync a later revision into an existing checkout.
+     */
+    @Test
+    fun `a pushed revision can be cloned and synced into another checkout`() {
+        val url = "${server!!.url}/shared-${System.nanoTime()}"
+        val origin = Files.createTempDirectory("lore-origin")
+        LoreClient.createRepository(origin, url)
+
+        origin.resolve("k.txt").writeText("first")
+        LoreWriteApi.stage(origin, listOf("k.txt"))
+        LoreWriteApi.commit(origin, "add k.txt")
+        LoreWriteApi.push(origin)
+
+        val clone = Files.createTempDirectory("lore-clone")
+        LoreSyncApi.clone(clone, url)
+
+        assertEquals("first", Files.readString(clone.resolve("k.txt")))
+
+        origin.resolve("k.txt").writeText("second")
+        LoreWriteApi.stage(origin, listOf("k.txt"))
+        LoreWriteApi.commit(origin, "edit k.txt")
+        LoreWriteApi.push(origin)
+
+        LoreSyncApi.sync(clone)
+
+        assertEquals("second", Files.readString(clone.resolve("k.txt")))
     }
 
     @Test
