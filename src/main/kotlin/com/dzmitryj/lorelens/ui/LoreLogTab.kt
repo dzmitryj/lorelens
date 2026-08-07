@@ -21,9 +21,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.FileStatus
 import com.intellij.openapi.vcs.LocalFilePath
 import com.intellij.openapi.vcs.changes.Change
-import com.intellij.openapi.vcs.changes.actions.diff.ShowDiffAction
+import com.intellij.openapi.vcs.changes.ui.ChangesBrowserBase
 import com.intellij.openapi.vcs.changes.ui.ChangesViewContentProvider
-import com.intellij.openapi.vcs.changes.ui.SimpleAsyncChangesBrowser
 import com.intellij.openapi.vcs.vfs.ContentRevisionVirtualFile
 import com.intellij.ui.DoubleClickListener
 import com.intellij.ui.FilterComponent
@@ -52,7 +51,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     private val model = ListTableModel(LoreLogColumn.ALL, emptyList<LogRow>())
     private val table = TableView(model)
 
-    private lateinit var changes: SimpleAsyncChangesBrowser
+    private lateinit var changes: LoreChangesBrowser
     private lateinit var loading: JBLoadingPanel
 
     private var all: List<LogRow> = emptyList()
@@ -66,7 +65,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         }
         TableSpeedSearch.installOn(table)
 
-        changes = SimpleAsyncChangesBrowser(project, false, false)
+        changes = LoreChangesBrowser(project)
         table.selectionModel.addListSelectionListener { event ->
             if (!event.valueIsAdjusting) showChangedFiles()
         }
@@ -140,36 +139,49 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         }
     }
 
-    /** Loads what the selected revision changed into the lower pane. */
+    /**
+     * One selected revision shows what it did to its parent; two show the span
+     * between them. Pairing against the working tree instead would report "this
+     * revision versus whatever is on disk now", a different and usually wrong
+     * question.
+     */
     private fun showChangedFiles() {
-        val row = table.selectedRow
-        val selected = model.items.getOrNull(row)
-        if (selected == null) {
+        val pair = selectedSpan()
+        if (pair == null) {
             changes.setChangesToDisplay(emptyList())
             return
         }
 
-        val (root, entry) = selected
-        val parent = LoreRevisionChain.parentOf(model.items, row)?.entry
+        val (root, span) = pair
+        val (older, newer) = span
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val built = runCatching { buildChanges(root, parent, entry) }
-                .onFailure { log.warn("Cannot read changes for revision ${entry.number}", it) }
+            val built = runCatching { changesBetween(root, older, newer) }
+                .onFailure { log.warn("Cannot read changes for revision ${newer.number}", it) }
                 .getOrDefault(emptyList())
             ApplicationManager.getApplication().invokeLater { changes.setChangesToDisplay(built) }
         }
     }
 
-    /**
-     * A revision's changes are what it did to its parent. Pairing against the
-     * working tree instead would report "this revision versus whatever is on
-     * disk now", which is a different and usually wrong question.
-     */
-    private fun buildChanges(
-        root: Path,
-        parent: LoreHistoryEntry?,
-        entry: LoreHistoryEntry,
-    ): List<Change> = changesBetween(root, parent, entry)
+    /** The revision range the selection stands for, oldest first. */
+    private fun selectedSpan(): Pair<Path, Pair<LoreHistoryEntry?, LoreHistoryEntry>>? {
+        val selected = table.selectedObjects
+        return when (selected.size) {
+            1 -> {
+                val row = table.selectedRow
+                val entry = model.items.getOrNull(row) ?: return null
+                val parent = LoreRevisionChain.parentOf(model.items, row)?.entry
+                entry.first to (parent to entry.entry)
+            }
+
+            2 -> {
+                val (newer, older) = selected.sortedByDescending { it.entry.number }
+                newer.first to (older.entry to newer.entry)
+            }
+
+            else -> null
+        }
+    }
 
     private fun changesBetween(
         root: Path,
@@ -207,7 +219,11 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         override fun actionPerformed(e: AnActionEvent) = refresh()
     }
 
-    /** Enabled only for exactly two selected revisions. */
+    /**
+     * Opens the pane's contents in a diff window. Going through the browser
+     * rather than ShowDiffAction keeps the revision-labelled titles, which are
+     * attached by its request producer.
+     */
     private inner class CompareRevisionsAction : AnAction(
         LoreLensBundle.message("log.compare"),
         null,
@@ -216,25 +232,11 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
 
         override fun update(e: AnActionEvent) {
-            e.presentation.isEnabled = table.selectedObjects.size == 2
+            e.presentation.isEnabled = table.selectedObjects.size in 1..2
         }
 
-        override fun actionPerformed(e: AnActionEvent) {
-            val selected = table.selectedObjects.takeIf { it.size == 2 } ?: return
-            val (newer, older) = selected.sortedByDescending { it.entry.number }
-            val root = newer.first
-
-            ApplicationManager.getApplication().executeOnPooledThread {
-                val built = runCatching { changesBetween(root, older.entry, newer.entry) }
-                    .onFailure { log.warn("Cannot compare revisions", it) }
-                    .getOrDefault(emptyList())
-                if (built.isEmpty()) return@executeOnPooledThread
-
-                ApplicationManager.getApplication().invokeLater {
-                    ShowDiffAction.showDiffForChange(project, built)
-                }
-            }
-        }
+        override fun actionPerformed(e: AnActionEvent) =
+            ChangesBrowserBase.showStandaloneDiff(project, changes)
     }
 
     /** Opens the file as it stood at the selected revision, read only. */
