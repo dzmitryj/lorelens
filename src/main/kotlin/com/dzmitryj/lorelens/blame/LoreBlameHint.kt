@@ -103,11 +103,16 @@ class LoreBlameHint(private val project: Project, private val editor: Editor) : 
      */
     private inner class HoverListener : EditorMouseMotionListener {
 
-        override fun mouseMoved(event: EditorMouseEvent) {
-            val current = inlay ?: return
-            if (editor.inlayModel.getElementAt(event.mouseEvent.point) !== current) return
+        private var hovered: Inlay<*>? = null
 
-            val message = (current.renderer as? HintRenderer)?.context?.record?.message ?: return
+        override fun mouseMoved(event: EditorMouseEvent) {
+            val over = editor.inlayModel.getElementAt(event.mouseEvent.point)?.takeIf { it === inlay }
+            if (over === hovered) return
+            hovered = over
+
+            // The inlay already shows the subject; only a body adds anything.
+            val message = (over?.renderer as? HintRenderer)?.context?.record?.message ?: return
+            if (message.lineSequence().count() < 2) return
             HintManager.getInstance().showInformationHint(editor, message)
         }
     }
