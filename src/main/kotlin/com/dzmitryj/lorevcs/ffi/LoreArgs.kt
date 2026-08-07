@@ -1,6 +1,7 @@
 package com.dzmitryj.lorevcs.ffi
 
 import com.dzmitryj.lorevcs.ffi.generated.lore_global_args_t
+import com.dzmitryj.lorevcs.ffi.generated.lore_string_array_t
 import com.dzmitryj.lorevcs.ffi.generated.lore_string_t
 import java.lang.foreign.Arena
 import java.lang.foreign.MemorySegment
@@ -22,7 +23,20 @@ class LoreArgs(private val arena: Arena) {
         return globals
     }
 
-    fun <T> struct(layout: java.lang.foreign.StructLayout): MemorySegment = arena.allocate(layout)
+    fun writeStrings(target: MemorySegment, values: List<String>) {
+        if (values.isEmpty()) {
+            lore_string_array_t.ptr(target, MemorySegment.NULL)
+            lore_string_array_t.count(target, 0L)
+            return
+        }
+
+        val elements = arena.allocate(lore_string_t.LAYOUT, values.size.toLong())
+        values.forEachIndexed { index, value ->
+            writeString(elements.asSlice(index * lore_string_t.SIZE, lore_string_t.SIZE), value)
+        }
+        lore_string_array_t.ptr(target, elements)
+        lore_string_array_t.count(target, values.size.toLong())
+    }
 
     fun writeString(target: MemorySegment, value: String) {
         val bytes = value.toByteArray(Charsets.UTF_8)

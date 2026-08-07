@@ -1,0 +1,139 @@
+package com.dzmitryj.lorevcs.api
+
+import com.dzmitryj.lorevcs.ffi.EventPump
+import com.dzmitryj.lorevcs.ffi.LoreArgs
+import com.dzmitryj.lorevcs.ffi.generated.FileHashEvent
+import com.dzmitryj.lorevcs.ffi.generated.LoreFunctions
+import com.dzmitryj.lorevcs.ffi.generated.RepositoryStatusFileEvent
+import com.dzmitryj.lorevcs.ffi.generated.RepositoryStatusRevisionEvent
+import com.dzmitryj.lorevcs.ffi.generated.lore_file_dirty_args_t
+import com.dzmitryj.lorevcs.ffi.generated.lore_file_dump_args_t
+import com.dzmitryj.lorevcs.ffi.generated.lore_file_hash_args_t
+import com.dzmitryj.lorevcs.ffi.generated.lore_repository_status_args_t
+import com.dzmitryj.lorevcs.model.LoreFileAction
+import com.dzmitryj.lorevcs.model.LoreFileHash
+import com.dzmitryj.lorevcs.model.LoreFileStatus
+import com.dzmitryj.lorevcs.model.LoreNodeType
+import com.dzmitryj.lorevcs.model.LoreRepositoryStatus
+import com.dzmitryj.lorevcs.model.LoreRevisionId
+import com.dzmitryj.lorevcs.model.LoreRevisionStatus
+import java.lang.foreign.Arena
+import java.nio.file.Path
+
+private fun Byte.toBoolean(): Boolean = this.toInt() != 0
+
+/**
+ * Status, dirty-marking and content reads. Paths are repository-relative and
+ * travel as native string arrays, so there is no argument-length ceiling to
+ * work around.
+ */
+object LoreStatusApi {
+
+    /**
+     * @param scan walks the filesystem and reconciles every path, which is
+     *   O(repository). The IDE normally avoids it by marking edits dirty as
+     *   they happen.
+     */
+    fun status(
+        root: Path,
+        paths: List<String> = emptyList(),
+        scan: Boolean = false,
+        checkDirty: Boolean = false,
+    ): LoreRepositoryStatus = Arena.ofConfined().use { arena ->
+        val args = LoreArgs(arena)
+        val globals = args.globals(root)
+        val options = arena.allocate(lore_repository_status_args_t.LAYOUT)
+
+        lore_repository_status_args_t.scan(options, if (scan) 1 else 0)
+        lore_repository_status_args_t.check_dirty(options, if (checkDirty) 1 else 0)
+        args.writeStrings(lore_repository_status_args_t.paths(options), paths)
+
+        val result = LoreClient.require(
+            EventPump.call(arena) { callback ->
+                LoreFunctions.lore_repository_status.invokeExact(globals, options, callback) as Int
+            },
+            "status",
+        )
+
+        LoreRepositoryStatus(
+            revision = result.filter<RepositoryStatusRevisionEvent>().lastOrNull()?.toModel(),
+            files = result.filter<RepositoryStatusFileEvent>().map { it.toModel() },
+        )
+    }
+
+    fun markDirty(root: Path, paths: List<String>) {
+        if (paths.isEmpty()) return
+
+        Arena.ofConfined().use { arena ->
+            val args = LoreArgs(arena)
+            val globals = args.globals(root)
+            val options = arena.allocate(lore_file_dirty_args_t.LAYOUT)
+            args.writeStrings(lore_file_dirty_args_t.paths(options), paths)
+
+            LoreClient.require(
+                EventPump.call(arena) { callback ->
+                    LoreFunctions.lore_file_dirty.invokeExact(globals, options, callback) as Int
+                },
+                "mark dirty",
+            )
+        }
+    }
+
+    fun hash(root: Path, paths: List<String>): List<LoreFileHash> {
+        if (paths.isEmpty()) return emptyList()
+
+        return Arena.ofConfined().use { arena ->
+            val args = LoreArgs(arena)
+            val globals = args.globals(root)
+            val options = arena.allocate(lore_file_hash_args_t.LAYOUT)
+            args.writeStrings(lore_file_hash_args_t.paths(options), paths)
+
+            LoreClient.require(
+                EventPump.call(arena) { callback ->
+                    LoreFunctions.lore_file_hash.invokeExact(globals, options, callback) as Int
+                },
+                "hash",
+            ).filter<FileHashEvent>().map { LoreFileHash(it.path, it.size, LoreRevisionId(it.hash)) }
+        }
+    }
+
+    /** Writes the content of [path] at [address] to [destination] on disk. */
+    fun dump(root: Path, address: String, path: String, destination: Path) {
+        Arena.ofConfined().use { arena ->
+            val args = LoreArgs(arena)
+            val globals = args.globals(root)
+            val options = arena.allocate(lore_file_dump_args_t.LAYOUT)
+            args.writeString(lore_file_dump_args_t.address(options), address)
+            args.writeString(lore_file_dump_args_t.path(options), destination.toString())
+
+            LoreClient.require(
+                EventPump.call(arena) { callback ->
+                    LoreFunctions.lore_file_dump.invokeExact(globals, options, callback) as Int
+                },
+                "dump $path",
+            )
+        }
+    }
+
+    private fun RepositoryStatusFileEvent.toModel() = LoreFileStatus(
+        path = path,
+        size = size,
+        action = LoreFileAction.of(action),
+        nodeType = LoreNodeType.of(type),
+        staged = flag_staged.toBoolean(),
+        dirty = flag_dirty.toBoolean(),
+        conflicted = flag_conflict.toBoolean(),
+        conflictUnresolved = flag_conflict_unresolved.toBoolean(),
+        fromPath = from_path.ifEmpty { null },
+    )
+
+    private fun RepositoryStatusRevisionEvent.toModel() = LoreRevisionStatus(
+        branchName = branch_name,
+        revision = LoreRevisionId(revision),
+        revisionNumber = revision_number,
+        stagedRevision = LoreRevisionId(revision_staged),
+        localAhead = is_local_ahead.toBoolean(),
+        remoteAhead = is_remote_ahead.toBoolean(),
+        remoteAvailable = remote_available.toBoolean(),
+    )
+}
