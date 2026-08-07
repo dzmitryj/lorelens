@@ -2,6 +2,7 @@ package com.dzmitryj.lorevcs.dirty
 
 import com.dzmitryj.lorevcs.LoreBundle
 import com.dzmitryj.lorevcs.api.LoreStatusApi
+import com.dzmitryj.lorevcs.ffi.LoreNativeUnavailableException
 import com.dzmitryj.lorevcs.repo.LoreRootFinder
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -15,6 +16,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.Alarm
 import com.intellij.vcsUtil.VcsUtil
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -33,6 +35,7 @@ class LoreDirtyMarkQueue(private val project: Project) : Disposable {
     /** Repository root path to the repository-relative paths awaiting a mark. */
     private val pending = ConcurrentHashMap<VirtualFile, MutableSet<String>>()
     private val consecutiveFailures = AtomicInteger()
+    private val nativeReported = AtomicBoolean()
 
     fun enqueue(files: Collection<VirtualFile>) {
         val settings = LoreDirtySettings.getInstance()
@@ -87,18 +90,31 @@ class LoreDirtyMarkQueue(private val project: Project) : Disposable {
     private fun onFailure(root: VirtualFile, e: RuntimeException) {
         log.warn("Failed to mark files dirty in ${root.path}", e)
 
+        // An unavailable library breaks every operation, not just marking, and
+        // is fixed by reinstalling rather than by the user. Report it, but do
+        // not persist the setting off -- that would outlive the fix.
+        if (e is LoreNativeUnavailableException) {
+            if (nativeReported.compareAndSet(false, true)) {
+                notify(LoreBundle.message("native.unavailable.title"), e.message.orEmpty())
+            }
+            pending.clear()
+            return
+        }
+
         if (consecutiveFailures.incrementAndGet() < FAILURE_LIMIT) return
 
         LoreDirtySettings.getInstance().markEditsDirty = false
         pending.clear()
+        notify(
+            LoreBundle.message("dirty.disabled.title"),
+            LoreBundle.message("dirty.disabled.message", root.presentableUrl),
+        )
+    }
 
+    private fun notify(title: String, message: String) {
         NotificationGroupManager.getInstance()
             .getNotificationGroup("Lore")
-            .createNotification(
-                LoreBundle.message("dirty.disabled.title"),
-                LoreBundle.message("dirty.disabled.message", root.presentableUrl),
-                NotificationType.ERROR,
-            )
+            .createNotification(title, message, NotificationType.ERROR)
             .notify(project)
     }
 
