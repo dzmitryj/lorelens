@@ -1,3 +1,4 @@
+import lore.FetchLoreNativeTask
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
@@ -23,6 +24,17 @@ dependencies {
         pluginVerifier()
         zipSigner()
     }
+}
+
+val pinnedLoreVersion = providers.gradleProperty("loreVersion").get()
+val loreNativeDir = layout.buildDirectory.dir("lore-native/$pinnedLoreVersion")
+
+val fetchLoreNative = tasks.register<FetchLoreNativeTask>("fetchLoreNative") {
+    loreVersion = pinnedLoreVersion
+    manifest = layout.projectDirectory.file("native/lore-versions.json")
+    githubToken = providers.environmentVariable("GITHUB_TOKEN")
+    downloadCache = gradle.gradleUserHomeDir.resolve("lore-native/$pinnedLoreVersion")
+    outputDirectory = loreNativeDir
 }
 
 intellijPlatform {
