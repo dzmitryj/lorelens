@@ -28,6 +28,7 @@ dependencies {
 
 val pluginDisplayName = "Lore Version Control"
 val pinnedLoreVersion = providers.gradleProperty("loreVersion").get()
+val verifyAgainstIde = providers.gradleProperty("verifyAgainstIde").orNull
 val loreNativeDir = layout.buildDirectory.dir("lore-native/$pinnedLoreVersion")
 val loreServerDir = layout.buildDirectory.dir("lore-server/$pinnedLoreVersion")
 
@@ -73,7 +74,9 @@ intellijPlatform {
         name = pluginDisplayName
 
         ideaVersion {
-            sinceBuild = "262"
+            // 261 is the earliest build on JBR 25, where java.lang.foreign stops
+            // being a preview API. Rider 2026.1 is 261.
+            sinceBuild = "261"
             untilBuild = "262.*"
         }
 
@@ -98,6 +101,10 @@ intellijPlatform {
     pluginVerification {
         ides {
             recommended()
+            // The plugin compiles against 2026.2 but claims 261, so check an
+            // installed IDE at the low end of the range:
+            //   ./gradlew verifyPlugin -PverifyAgainstIde=<path to IDE>
+            verifyAgainstIde?.let { local(it) }
         }
     }
 
