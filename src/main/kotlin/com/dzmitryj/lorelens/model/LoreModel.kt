@@ -78,3 +78,25 @@ data class LoreFileHash(val path: String, val size: Long, val hash: LoreRevision
 
 /** [path] is repository-relative; [owner] is a Lore user id. */
 data class LoreLock(val path: String, val owner: String, val lockedAt: Long)
+
+/** Unified diff text for one file. */
+data class LoreFilePatch(val path: String, val patch: String, val action: LoreFileAction)
+
+/** One file changed between two revisions. Carries no patch text. */
+data class LoreRevisionChange(val path: String, val action: LoreFileAction)
+
+/**
+ * One appearance of a file in history. [action] is exact rather than inferred:
+ * Lore records MOVE and COPY rather than leaving them to rename detection.
+ */
+data class LoreHistoryRecord(
+    val path: String,
+    val revision: LoreRevisionId,
+    val number: Long,
+    val size: Long,
+    val action: LoreFileAction,
+    val metadata: Map<String, String>,
+) {
+    val message: String? get() = metadata["message"]
+    val timestamp: String? get() = metadata["timestamp"]
+}

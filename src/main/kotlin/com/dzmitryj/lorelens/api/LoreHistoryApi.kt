@@ -2,6 +2,7 @@ package com.dzmitryj.lorelens.api
 
 import com.dzmitryj.lorelens.ffi.EventPump
 import com.dzmitryj.lorelens.ffi.LoreArgs
+import com.dzmitryj.lorelens.ffi.generated.FileHistoryEvent
 import com.dzmitryj.lorelens.ffi.generated.LoreEvent
 import com.dzmitryj.lorelens.ffi.generated.LoreFunctions
 import com.dzmitryj.lorelens.ffi.generated.Metadata
@@ -45,6 +46,28 @@ object LoreHistoryApi {
         )
 
         assemble(result.events)
+    }
+
+    /**
+     * Metadata arrives as separate events following the entry it belongs to, so
+     * it is attributed to whichever revision was announced most recently. Shared
+     * with per-file history, which interleaves the same way.
+     */
+    fun metadataByRevision(events: List<LoreEvent>): Map<String, Map<String, String>> {
+        val byRevision = mutableMapOf<String, MutableMap<String, String>>()
+        var current: String? = null
+
+        events.forEach { event ->
+            when (event) {
+                is RevisionHistoryEntryEvent -> current = LoreRevisionId(event.revision).hex
+                is FileHistoryEvent -> current = LoreRevisionId(event.revision).hex
+                is MetadataEvent -> (event.value as? Metadata.StringValue)?.let { value ->
+                    current?.let { byRevision.getOrPut(it) { mutableMapOf() }[event.key] = value.value }
+                }
+                else -> Unit
+            }
+        }
+        return byRevision
     }
 
     private fun assemble(events: List<LoreEvent>): List<LoreHistoryEntry> {

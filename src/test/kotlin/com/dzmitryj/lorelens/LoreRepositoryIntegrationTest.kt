@@ -1,6 +1,7 @@
 package com.dzmitryj.lorelens
 
 import com.dzmitryj.lorelens.api.LoreClient
+import com.dzmitryj.lorelens.api.LoreDiffApi
 import com.dzmitryj.lorelens.api.LoreHistoryApi
 import com.dzmitryj.lorelens.api.LoreLockApi
 import com.dzmitryj.lorelens.api.LoreStatusApi
@@ -253,6 +254,71 @@ class LoreRepositoryIntegrationTest {
         ).contentAsBytes
 
         assertEquals("base content", content?.toString(Charsets.UTF_8))
+    }
+
+    /**
+     * lore_file_diff is the only verb that yields patch text, and it can diff
+     * two committed revisions without touching the working tree.
+     */
+    @Test
+    fun `two committed revisions can be diffed as text`() {
+        repository.resolve("p.txt").writeText("first line\n")
+        LoreWriteApi.stage(repository, listOf("p.txt"))
+        LoreWriteApi.commit(repository, "one")
+        val first = LoreStatusApi.status(repository, scan = true).revision!!.revision
+
+        repository.resolve("p.txt").writeText("first line\nsecond line\n")
+        LoreWriteApi.stage(repository, listOf("p.txt"))
+        LoreWriteApi.commit(repository, "two")
+        val second = LoreStatusApi.status(repository, scan = true).revision!!.revision
+
+        val patches = LoreDiffApi.fileDiff(repository, listOf("p.txt"), first.hex, second.hex)
+
+        assertEquals(1, patches.size)
+        assertTrue("expected an added line in:\n${patches.single().patch}",
+            patches.single().patch.contains("+second line"))
+    }
+
+    /** Revision diff reports which files changed, but carries no patch text. */
+    @Test
+    fun `a revision diff lists the changed files`() {
+        repository.resolve("q.txt").writeText("q")
+        LoreWriteApi.stage(repository, listOf("q.txt"))
+        LoreWriteApi.commit(repository, "add q")
+        val first = LoreStatusApi.status(repository, scan = true).revision!!.revision
+
+        repository.resolve("r.txt").writeText("r")
+        LoreWriteApi.stage(repository, listOf("r.txt"))
+        LoreWriteApi.commit(repository, "add r")
+        val second = LoreStatusApi.status(repository, scan = true).revision!!.revision
+
+        val changed = LoreDiffApi.revisionDiff(repository, first.hex, second.hex)
+
+        assertTrue("expected r.txt in ${changed.map { it.path }}", changed.any { it.path == "r.txt" })
+    }
+
+    /**
+     * Lore records MOVE as a first-class action, so following a rename is exact
+     * rather than heuristic as it is in Git.
+     */
+    @Test
+    fun `file history follows a move`() {
+        repository.resolve("s.txt").writeText("moved content")
+        LoreWriteApi.stage(repository, listOf("s.txt"))
+        LoreWriteApi.commit(repository, "add s")
+
+        Files.move(repository.resolve("s.txt"), repository.resolve("t.txt"))
+        LoreWriteApi.stageMove(repository, "s.txt", "t.txt")
+        LoreWriteApi.commit(repository, "move s to t")
+
+        val history = LoreDiffApi.fileHistory(repository, "t.txt")
+
+        assertTrue("expected history for t.txt, got $history", history.isNotEmpty())
+        assertTrue(
+            "expected a MOVE in ${history.map { it.action }}",
+            history.any { it.action == LoreFileAction.MOVE },
+        )
+        assertEquals("move s to t", history.first().message)
     }
 
     @Test
