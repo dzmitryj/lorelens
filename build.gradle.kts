@@ -38,6 +38,15 @@ val fetchLoreNative = tasks.register<FetchLoreNativeTask>("fetchLoreNative") {
     outputDirectory = loreNativeDir
 }
 
+tasks.test {
+    dependsOn(fetchLoreNative)
+    systemProperty(
+        "lore.native.dir",
+        loreNativeDir.get().asFile.absolutePath,
+    )
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
 // Shipped as plain files under <plugin>/native rather than inside the jar, so
 // the runtime can dlopen them directly instead of unpacking a copy first.
 tasks.prepareSandbox {
