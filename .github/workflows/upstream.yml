@@ -1,0 +1,144 @@
+# Tracks EpicGames/lore releases.
+#
+# Lore is pre-1.0 and its docs warn that interfaces may change between releases;
+# 24 symbols were added and the FFI error codes broke once inside six weeks. This
+# workflow turns that into a reviewed pull request carrying the ABI diff rather
+# than a bug report from a user.
+
+name: Upstream
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Lore tag to move to (defaults to the newest release)'
+        required: false
+
+concurrency:
+  group: upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    name: Bump pinned lore version
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Resolve target version
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          current=$(grep '^loreVersion=' gradle.properties | cut -d= -f2)
+          if [ -n "${{ inputs.tag }}" ]; then
+            target="${{ inputs.tag }}"
+          else
+            target=$(gh release view --repo EpicGames/lore --json tagName --jq .tagName)
+          fi
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          if [ "$current" = "$target" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record current symbols
+        if: steps.target.outputs.changed == 'true'
+        run: |
+          grep -oE '^    val lore_[a-z_]+' \
+            src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreFunctions.kt \
+            | sed 's/^    val //' | sort > /tmp/symbols-before.txt
+          cp src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreStatus.kt /tmp/status-before.kt
+
+      # Downloads the new assets, checksums them, and rewrites the manifest so
+      # the pinned hashes are part of the reviewed diff rather than trusted
+      # blindly at build time.
+      - name: Update manifest and regenerate
+        if: steps.target.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          python3 .github/scripts/bump_lore.py "$TARGET"
+          ./gradlew :codegen:generateLoreBindings
+        # GITHUB_TOKEN is also read by fetchLoreNative for the asset downloads.
+
+      - name: Verify
+        if: steps.target.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          clang -std=c11 -I "build/lore-native/$TARGET" \
+            -o build/layout-probe/layout_probe build/layout-probe/layout_probe.c
+          ./build/layout-probe/layout_probe
+          ./gradlew check
+
+      - name: Build ABI diff
+        if: steps.target.outputs.changed == 'true'
+        id: diff
+        run: |
+          grep -oE '^    val lore_[a-z_]+' \
+            src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreFunctions.kt \
+            | sed 's/^    val //' | sort > /tmp/symbols-after.txt
+
+          {
+            echo "## ABI diff ${{ steps.target.outputs.current }} to ${{ steps.target.outputs.target }}"
+            echo
+            echo "### Symbols added"
+            comm -13 /tmp/symbols-before.txt /tmp/symbols-after.txt | sed 's/^/- /' | grep . || echo "_none_"
+            echo
+            echo "### Symbols removed"
+            comm -23 /tmp/symbols-before.txt /tmp/symbols-after.txt | sed 's/^/- /' | grep . || echo "_none_"
+            echo
+            echo "### Error codes"
+            if diff -q /tmp/status-before.kt \
+                 src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreStatus.kt > /dev/null; then
+              echo "_unchanged_"
+            else
+              echo '```diff'
+              diff -u /tmp/status-before.kt \
+                src/main/kotlin/com/dzmitryj/lorevcs/ffi/generated/LoreStatus.kt || true
+              echo '```'
+            fi
+            echo
+            echo "Layout probe and \`check\` passed on this branch."
+          } > /tmp/body.md
+
+          if comm -23 /tmp/symbols-before.txt /tmp/symbols-after.txt | grep -q . ; then
+            echo "breaking=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "breaking=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open pull request
+        if: steps.target.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: upstream/lore-${{ steps.target.outputs.target }}
+          title: 'build(native): bump lore to ${{ steps.target.outputs.target }}'
+          body-path: /tmp/body.md
+          labels: ${{ steps.diff.outputs.breaking == 'true' && 'upstream,breaking' || 'upstream' }}
+          commit-message: |
+            build(native): bump lore to ${{ steps.target.outputs.target }}
+
+            Regenerated bindings and refreshed the checksum manifest.
