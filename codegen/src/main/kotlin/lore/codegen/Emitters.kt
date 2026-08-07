@@ -124,6 +124,8 @@ class FunctionEmitter(private val header: CHeader, private val types: TypeMapper
         appendLine()
         appendLine("import com.dzmitryj.lorevcs.ffi.LoreLinker")
         appendLine("import java.lang.foreign.FunctionDescriptor")
+        appendLine("import java.lang.foreign.MemoryLayout")
+        appendLine("import java.lang.foreign.ValueLayout")
         appendLine("import java.lang.invoke.MethodHandle")
         appendLine()
         appendLine("/**")
