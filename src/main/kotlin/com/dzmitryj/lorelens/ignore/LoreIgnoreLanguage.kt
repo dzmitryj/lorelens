@@ -7,7 +7,7 @@ import com.intellij.openapi.vcs.changes.ignore.lang.IgnoreLanguage
 /**
  * Subclassing the platform's ignore language inherits highlighting, comment
  * toggling, brace matching, directory markers and the duplicate and unused entry
- * inspections, the same way git4idea does for .gitignore.
+ * inspections, the same way the bundled Git plugin does for .gitignore.
  */
 class LoreIgnoreLanguage private constructor() : IgnoreLanguage("LoreIgnore", "loreignore") {
 

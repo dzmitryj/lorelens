@@ -101,10 +101,10 @@ intellijPlatform {
 
     pluginVerification {
         // Deprecated usage is excluded deliberately, not to hide problems:
-        // VcsFileContent.getContent() is deprecated yet still abstract, with no
-        // platform base class implementing it, so every VcsFileRevision must
-        // override it -- git4idea included. Everything actionable still fails
-        // the build, internal API usage above all.
+        // VcsFileContent.getContent() is deprecated yet still abstract, and no
+        // platform base class implements it, so every VcsFileRevision has to
+        // override it. Everything actionable still fails the build, internal
+        // API usage above all.
         failureLevel = listOf(
             VerifyPluginTask.FailureLevel.COMPATIBILITY_PROBLEMS,
             VerifyPluginTask.FailureLevel.INTERNAL_API_USAGES,

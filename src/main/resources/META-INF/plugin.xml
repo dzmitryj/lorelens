@@ -12,6 +12,7 @@
              administrativeAreaName=".lore" areChildrenValidMappings="true"/>
         <vcsRootChecker implementation="com.dzmitryj.lorelens.repo.LoreRootChecker"/>
         <vfs.asyncListener implementation="com.dzmitryj.lorelens.dirty.LoreAsyncFileListener"/>
+        <postStartupActivity implementation="com.dzmitryj.lorelens.repo.LoreMappingMigration"/>
         <postStartupActivity implementation="com.dzmitryj.lorelens.dirty.LoreStartupRescan"/>
         <notificationGroup id="LoreLens" displayType="BALLOON" bundle="messages.LoreLensBundle" key="vcs.name"/>
         <editorNotificationProvider implementation="com.dzmitryj.lorelens.lock.LoreLockBanner"/>
