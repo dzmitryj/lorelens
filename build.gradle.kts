@@ -24,5 +24,44 @@ dependencies {
 
         // Add plugin dependencies for compilation here:
         bundledPlugin("org.jetbrains.kotlin")
+
+        pluginVerifier()
+        zipSigner()
+    }
+}
+
+intellijPlatform {
+    pluginConfiguration {
+        name = "Lore Version Control"
+
+        ideaVersion {
+            // Capped deliberately. The plugin binds a pre-1.0 native ABI and a
+            // platform VCS API that is stable but not frozen, so a broken 263
+            // must not be able to auto-install onto users. Loosen only after
+            // testing against an EAP.
+            sinceBuild = "262"
+            untilBuild = "262.*"
+        }
+
+        vendor {
+            name = "Dimi Mitchell"
+            email = "dimi.mitchell@gmail.com"
+        }
+    }
+
+    pluginVerification {
+        ides {
+            recommended()
+        }
+    }
+
+    signing {
+        certificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PRIVATE_KEY")
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
+    }
+
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN")
     }
 }
