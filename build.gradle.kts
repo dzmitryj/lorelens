@@ -1,5 +1,6 @@
 import lore.FetchLoreNativeTask
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -99,6 +100,22 @@ intellijPlatform {
     }
 
     pluginVerification {
+        // Deprecated usage is excluded deliberately, not to hide problems:
+        // VcsFileContent.getContent() is deprecated yet still abstract, with no
+        // platform base class implementing it, so every VcsFileRevision must
+        // override it -- git4idea included. Everything actionable still fails
+        // the build, internal API usage above all.
+        failureLevel = listOf(
+            VerifyPluginTask.FailureLevel.COMPATIBILITY_PROBLEMS,
+            VerifyPluginTask.FailureLevel.INTERNAL_API_USAGES,
+            VerifyPluginTask.FailureLevel.NON_EXTENDABLE_API_USAGES,
+            VerifyPluginTask.FailureLevel.OVERRIDE_ONLY_API_USAGES,
+            VerifyPluginTask.FailureLevel.SCHEDULED_FOR_REMOVAL_API_USAGES,
+            VerifyPluginTask.FailureLevel.PLUGIN_STRUCTURE_WARNINGS,
+            VerifyPluginTask.FailureLevel.MISSING_DEPENDENCIES,
+            VerifyPluginTask.FailureLevel.INVALID_PLUGIN,
+        )
+
         ides {
             recommended()
             // The plugin compiles against 2026.2 but claims 261, so check an

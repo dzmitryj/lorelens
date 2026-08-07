@@ -116,12 +116,14 @@ class LoreHistoryProvider(private val project: Project) : VcsHistoryProvider {
 
         override fun getChangedRepositoryPath() = null
 
-        override fun loadContent(): ByteArray? = content()
-
-        override fun getContent(): ByteArray? = content()
-
-        private fun content(): ByteArray? =
+        override fun loadContent(): ByteArray? =
             LoreContentRevision(root, filePath, record.path, number).contentAsBytes
+
+        // Deprecated but still abstract on VcsFileContent, with no platform base
+        // class implementing it -- git4idea's own GitFileRevision overrides it
+        // for the same reason.
+        @Deprecated("Use loadContent", ReplaceWith("loadContent()"))
+        override fun getContent(): ByteArray? = loadContent()
 
         private fun parseDate(text: String): Date? =
             runCatching { Date.from(Instant.from(DateTimeFormatter.RFC_1123_DATE_TIME.parse(text))) }
