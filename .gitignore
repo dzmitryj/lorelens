@@ -2,3 +2,5 @@
 .idea
 .intellijPlatform
 build
+# IDE module file, regenerated on project open
+*.iml

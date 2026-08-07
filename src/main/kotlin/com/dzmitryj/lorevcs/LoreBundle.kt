@@ -1,13 +1,13 @@
-package com.dzmitryj
+package com.dzmitryj.lorevcs
 
 import com.intellij.DynamicBundle
 import org.jetbrains.annotations.PropertyKey
 import java.util.function.Supplier
 
-private const val BUNDLE = "messages.MyMessageBundle"
+private const val BUNDLE = "messages.LoreBundle"
 
-internal object MyMessageBundle {
-    private val instance = DynamicBundle(MyMessageBundle::class.java, BUNDLE)
+internal object LoreBundle {
+    private val instance = DynamicBundle(LoreBundle::class.java, BUNDLE)
 
     @JvmStatic
     fun message(key: @PropertyKey(resourceBundle = BUNDLE) String, vararg params: Any?): String {
