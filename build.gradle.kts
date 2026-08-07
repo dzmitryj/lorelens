@@ -26,6 +26,7 @@ dependencies {
     }
 }
 
+val pluginDisplayName = "Lore Version Control"
 val pinnedLoreVersion = providers.gradleProperty("loreVersion").get()
 val loreNativeDir = layout.buildDirectory.dir("lore-native/$pinnedLoreVersion")
 
@@ -37,9 +38,19 @@ val fetchLoreNative = tasks.register<FetchLoreNativeTask>("fetchLoreNative") {
     outputDirectory = loreNativeDir
 }
 
+// Shipped as plain files under <plugin>/native rather than inside the jar, so
+// the runtime can dlopen them directly instead of unpacking a copy first.
+tasks.prepareSandbox {
+    dependsOn(fetchLoreNative)
+    from(loreNativeDir) {
+        into("${project.name}/native")
+        exclude("lore.h")
+    }
+}
+
 intellijPlatform {
     pluginConfiguration {
-        name = "Lore Version Control"
+        name = pluginDisplayName
 
         ideaVersion {
             sinceBuild = "262"
