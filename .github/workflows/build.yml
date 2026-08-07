@@ -61,6 +61,48 @@ jobs:
           name: plugin-distribution
           path: ./build/distributions/*.zip
 
+  # Compare the generated FFM layouts against what each platform's C compiler
+  # computes for lore.h. A wrong offset is a silently wrong read at runtime
+  # rather than an error, so this is the guard that has to run everywhere.
+  layouts:
+    name: Layouts
+    needs: [ build ]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Generate bindings and probe
+        run: ./gradlew :codegen:generateLoreBindings
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read pinned lore version
+        id: lore
+        shell: bash
+        run: echo "version=$(grep '^loreVersion=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Compile and run probe
+        shell: bash
+        run: |
+          clang -std=c11 -I "build/lore-native/${{ steps.lore.outputs.version }}" \
+            -o build/layout-probe/layout_probe build/layout-probe/layout_probe.c
+          ./build/layout-probe/layout_probe
+
   # Run tests and upload test reports on failure
   test:
     name: Test
