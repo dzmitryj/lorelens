@@ -39,7 +39,7 @@ class LoreHistoryProvider(private val project: Project) : VcsHistoryProvider {
 
     override fun getHelpId(): String? = null
 
-    override fun getHistoryDiffHandler() = null
+    override fun getHistoryDiffHandler() = LoreDiffFromHistoryHandler()
 
     override fun supportsHistoryForDirectories(): Boolean = false
 
