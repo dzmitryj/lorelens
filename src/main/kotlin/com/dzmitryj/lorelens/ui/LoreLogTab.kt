@@ -1,6 +1,7 @@
 package com.dzmitryj.lorelens.ui
 
 import com.dzmitryj.lorelens.LoreLensBundle
+import com.dzmitryj.lorelens.api.LoreBranchApi
 import com.dzmitryj.lorelens.api.LoreDiffApi
 import com.dzmitryj.lorelens.api.LoreHistoryApi
 import com.dzmitryj.lorelens.api.LoreHistoryEntry
@@ -18,6 +19,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.vcs.FileStatus
 import com.intellij.openapi.vcs.LocalFilePath
 import com.intellij.openapi.vcs.changes.Change
@@ -37,6 +39,7 @@ import com.intellij.util.ui.ListTableModel
 import java.awt.BorderLayout
 import java.awt.event.MouseEvent
 import java.nio.file.Path
+import javax.swing.DefaultComboBoxModel
 import javax.swing.JPanel
 import javax.swing.ListSelectionModel
 
@@ -56,8 +59,12 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private var all: List<LogRow> = emptyList()
 
+    /** Empty is the current branch, which is what Lore defaults to. */
+    private var branch: String = ""
+
     // After `all`, which its filter callback reads.
     private val filter = LogFilter()
+    private val branches = ComboBox(DefaultComboBoxModel(arrayOf(CURRENT_BRANCH)))
 
     override fun initTabContent(content: Content) {
         table.apply {
@@ -67,6 +74,14 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             emptyText.text = LoreLensBundle.message("log.empty")
         }
         TableSpeedSearch.installOn(table)
+
+        branches.addActionListener {
+            val selected = branches.selectedItem as? String ?: return@addActionListener
+            val chosen = if (selected == CURRENT_BRANCH) "" else selected
+            if (chosen == branch) return@addActionListener
+            branch = chosen
+            refresh()
+        }
 
         changes = LoreChangesBrowser(project)
         table.selectionModel.addListSelectionListener { event ->
@@ -105,7 +120,13 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                             .component,
                         BorderLayout.WEST,
                     )
-                    add(filter, BorderLayout.EAST)
+                    add(
+                        JPanel(BorderLayout()).apply {
+                            add(branches, BorderLayout.WEST)
+                            add(filter, BorderLayout.EAST)
+                        },
+                        BorderLayout.EAST,
+                    )
                 },
                 BorderLayout.NORTH,
             )
@@ -117,19 +138,45 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private fun refresh() {
         loading.startLoading()
+        val selected = branch
+
         ApplicationManager.getApplication().executeOnPooledThread {
-            val entries = LoreRootFinder.mappedRoots(project).flatMap { root ->
-                runCatching { LoreHistoryApi.history(root.toNioPath(), HISTORY_LIMIT) }
-                    .onFailure { log.warn("Cannot read Lore history for ${root.path}", it) }
+            val roots = LoreRootFinder.mappedRoots(project).map { it.toNioPath() }
+            val entries = roots.flatMap { root ->
+                runCatching { LoreHistoryApi.history(root, HISTORY_LIMIT, branch = selected) }
+                    .onFailure { log.warn("Cannot read Lore history for $root", it) }
                     .getOrDefault(emptyList())
-                    .map { root.toNioPath() to it }
+                    .map { root to it }
             }
+            val names = roots.firstOrNull()?.let { root ->
+                runCatching { LoreBranchApi.list(root).filterNot { it.isArchived } }
+                    .onFailure { log.warn("Cannot list Lore branches for $root", it) }
+                    .getOrDefault(emptyList())
+                    .map { it.name }
+                    .distinct()
+                    .sorted()
+            }.orEmpty()
+
             ApplicationManager.getApplication().invokeLater {
                 all = entries
+                showBranches(names)
                 applyFilter(filter.filter ?: "")
                 loading.stopLoading()
             }
         }
+    }
+
+    /** Rebuilt in place, so reselecting must not fire another refresh. */
+    private fun showBranches(names: List<String>) {
+        val wanted = branch.ifEmpty { CURRENT_BRANCH }
+        val items = listOf(CURRENT_BRANCH) + names
+        if ((0 until branches.itemCount).map(branches::getItemAt) == items) return
+
+        val listeners = branches.actionListeners
+        listeners.forEach(branches::removeActionListener)
+        branches.model = DefaultComboBoxModel(items.toTypedArray())
+        branches.selectedItem = if (wanted in items) wanted else CURRENT_BRANCH
+        listeners.forEach(branches::addActionListener)
     }
 
     private fun applyFilter(text: String) {
@@ -268,5 +315,6 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private companion object {
         const val HISTORY_LIMIT = 200
+        val CURRENT_BRANCH: String = LoreLensBundle.message("log.branch.current")
     }
 }
