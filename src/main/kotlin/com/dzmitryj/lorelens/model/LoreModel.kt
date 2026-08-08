@@ -116,7 +116,21 @@ enum class LoreBranchLocation {
     }
 }
 
+/** Where a branch was cut: the branch it came from, and the revision. */
+data class LoreBranchPoint(val branch: LoreBranchId, val revision: LoreRevisionId)
+
+/** Opaque 16-byte branch identifier. */
+@JvmInline
+value class LoreBranchId(val bytes: ByteArray) {
+    val hex: String get() = bytes.joinToString("") { "%02x".format(it) }
+
+    val isNone: Boolean get() = bytes.all { it.toInt() == 0 }
+
+    override fun toString(): String = if (isNone) "none" else hex.take(12)
+}
+
 data class LoreBranch(
+    val id: LoreBranchId,
     val name: String,
     val category: String,
     val location: LoreBranchLocation,
@@ -125,9 +139,15 @@ data class LoreBranch(
     val createdMillis: Long,
     val isCurrent: Boolean,
     val isArchived: Boolean,
-    /** Revisions this branch was created from, nearest first. */
-    val branchPoints: List<LoreRevisionId>,
-)
+    /**
+     * Where this branch was cut, nearest first. Carries the parent branch as
+     * well as the revision, which is what makes the hierarchy knowable.
+     */
+    val branchPoints: List<LoreBranchPoint>,
+) {
+    /** The branch this one was cut from, if it is in the listing. */
+    val parentBranch: LoreBranchId? get() = branchPoints.firstOrNull()?.branch?.takeIf { !it.isNone }
+}
 
 /** What a merge would touch, and where it would stop. */
 data class LoreMergePreview(val changed: List<String>, val conflicted: List<String>) {
