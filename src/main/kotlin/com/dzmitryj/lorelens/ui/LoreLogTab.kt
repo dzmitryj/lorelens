@@ -69,8 +69,17 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     private val log = logger<LoreLogTab>()
     private var graphRows: List<LoreGraphLayout.Row> = emptyList()
 
+    /** The rows currently on screen, which the graph column paints against. */
+    private var visible: List<LogRow> = emptyList()
+
     private val model = ListTableModel(
-        LoreLogColumn.columns(LoreGraphColumn { graphRows }),
+        LoreLogColumn.columns(
+            LoreGraphColumn(
+                rows = { graphRows },
+                authorOf = { index -> visible.getOrNull(index)?.entry?.author },
+                isMerge = { index -> visible.getOrNull(index)?.entry?.isMerge == true },
+            ),
+        ),
         emptyList<LogRow>(),
     )
     private val table = TableView(model)
@@ -92,7 +101,11 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     private var known: List<LoreBranch> = emptyList()
 
     private val details = LoreCommitDetailsPanel()
-    private val branchGraph = LoreBranchGraphPanel()
+    /** Built once the tab exists, because it needs the table's action group. */
+    private lateinit var branchGraph: LoreBranchGraphPanel
+
+    /** Keyed on the branch tips, so switching tabs is free until one moves. */
+    private var branchGraphKey: String = ""
 
     /** Where this checkout sits, in the tab rather than only in the status bar. */
     private val repository = LoreRepositoryPanel(
@@ -159,9 +172,14 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             }
         }.installOn(table)
 
+        branchGraph = LoreBranchGraphPanel(onSelect = ::selectRevision, actions = { actions })
+
         val preview = JBTabbedPane().apply {
             addTab(LoreLensBundle.message("preview.details"), details)
             addTab(LoreLensBundle.message("preview.graph"), branchGraph)
+            addChangeListener {
+                if (selectedComponent === branchGraph) loadBranchGraph()
+            }
         }
 
         val lower = OnePixelSplitter(false, "LoreLens.Log.Details", 0.6f).apply {
@@ -221,6 +239,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             ApplicationManager.getApplication().invokeLater {
                 all = entries
                 known = found
+                branchGraphKey = ""
                 applyFilter(filter.filter ?: "")
                 table.updateColumnSizes()
                 repository.show(state)
@@ -242,6 +261,60 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
      */
     private fun containing(row: LogRow): List<String> =
         listOfNotNull(browsing?.name ?: currentBranchName().ifEmpty { null })
+
+    /** Moves the table to a revision the branch graph was clicked on. */
+    private fun selectRevision(hash: String) {
+        val index = model.items.indexOfFirst { it.entry.revision.hex == hash }
+        if (index < 0) return
+        val view = table.convertRowIndexToView(index)
+        table.selectionModel.setSelectionInterval(view, view)
+        table.scrollRectToVisible(table.getCellRect(view, 0, true))
+    }
+
+    /**
+     * One history call per branch, which the table itself never needs, so it is
+     * paid on first sight of the graph rather than on every refresh.
+     */
+    private fun loadBranchGraph() {
+        val root = LoreRootFinder.mappedRoots(project).firstOrNull()?.toNioPath() ?: return
+        val key = known.joinToString(",") { "${it.name}@${it.latest.hex}" }
+        if (key == branchGraphKey) return
+        branchGraphKey = key
+
+        val current = currentBranchName()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val walks = known.distinctBy { it.name }.map { branch ->
+                val revisions = runCatching { LoreHistoryApi.history(root, HISTORY_LIMIT, branch = branch.name) }
+                    .onFailure { log.warn("Cannot read history for ${branch.name}", it) }
+                    .getOrDefault(emptyList())
+
+                // Where this branch was cut. Every revision at or before it
+                // belongs to whatever it was cut from, not to this branch.
+                val branchPoint = branch.branchPoints
+                    .mapNotNull { point -> revisions.firstOrNull { it.revision.hex == point.hex }?.number }
+                    .maxOrNull()
+                    ?: 0L
+
+                LoreBranchGraphLayout.Walk(
+                    branch = branch.name,
+                    branchPoint = branchPoint,
+                    revisions = revisions.map { entry ->
+                        LoreBranchGraphLayout.Input(
+                            hash = entry.revision.hex,
+                            number = entry.number,
+                            branch = branch.name,
+                            parents = entry.parents.map { it.hex },
+                            author = entry.author,
+                            isMerge = entry.isMerge,
+                        )
+                    },
+                )
+            }
+
+            val graph = LoreBranchGraphLayout.layout(LoreBranchGraphLayout.attribute(walks), current)
+            ApplicationManager.getApplication().invokeLater { branchGraph.show(graph, current) }
+        }
+    }
 
     private fun currentBranchName(): String =
         LoreRootFinder.mappedRoots(project).firstOrNull()
@@ -344,6 +417,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         graphRows = LoreGraphLayout.layout(
             rows.map { it.entry.revision.hex to it.entry.parents.map { parent -> parent.hex } },
         )
+        visible = rows
         model.items = rows
     }
 
@@ -356,7 +430,6 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     private fun showChangedFiles() {
         val selected = table.selectedObjects.takeIf { it.size == 1 }?.single()
         details.show(selected, selected?.let { row -> row.tips.ifEmpty { containing(row) } }.orEmpty())
-        branchGraph.show(known, selected)
 
         val pair = selectedSpan()
         if (pair == null) {
