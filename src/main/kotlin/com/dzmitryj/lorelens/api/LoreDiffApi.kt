@@ -5,6 +5,7 @@ import com.dzmitryj.lorelens.ffi.LoreArgs
 import com.dzmitryj.lorelens.ffi.generated.FileDiffEvent
 import com.dzmitryj.lorelens.ffi.generated.FileHistoryEvent
 import com.dzmitryj.lorelens.ffi.generated.LoreFunctions
+import com.dzmitryj.lorelens.ffi.generated.LoreStatus
 import com.dzmitryj.lorelens.ffi.generated.RevisionDiffFileEvent
 import com.dzmitryj.lorelens.ffi.generated.lore_file_diff_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_file_history_args_t
@@ -92,9 +93,20 @@ object LoreDiffApi {
                 },
                 "revision diff",
             ).filter<RevisionDiffFileEvent>().map {
-                LoreRevisionChange(relative(root, it.path), LoreFileAction.of(it.action))
+                LoreRevisionChange(
+                    path = relative(root, it.path),
+                    action = LoreFileAction.of(it.action),
+                    oldAddress = address(it.old_address),
+                    newAddress = address(it.new_address),
+                )
             }
         }
+
+    /** Zero on the missing side; null keeps that meaning. */
+    private fun address(at: com.dzmitryj.lorelens.ffi.generated.Address): String? {
+        if (at.hash.all { it == 0.toByte() }) return null
+        return at.hash.toHex() + "-" + at.context.toHex()
+    }
 
     /**
      * History of one file. MOVE and COPY are first-class actions in Lore rather
@@ -108,12 +120,16 @@ object LoreDiffApi {
             args.writeString(lore_file_history_args_t.path(options), path)
             lore_file_history_args_t.length(options, limit)
 
-            val result = LoreClient.require(
-                EventPump.call(arena) { callback ->
-                    LoreFunctions.lore_file_history.invokeExact(globals, options, callback) as Int
-                },
-                "file history $path",
-            )
+            val called = EventPump.call(arena) { callback ->
+                LoreFunctions.lore_file_history.invokeExact(globals, options, callback) as Int
+            }
+            // A path Lore has never tracked has an empty history, not a
+            // failure: generated and ignored files reach here through the
+            // ordinary history and blame entry points.
+            if (!called.succeeded && called.statusOrNull() == LoreStatus.FILE_NOT_FOUND) {
+                return emptyList()
+            }
+            val result = LoreClient.require(called, "file history $path")
 
             val metadata = LoreHistoryApi.metadataByRevision(result.events)
             result.filter<FileHistoryEvent>().map { entry ->
@@ -125,7 +141,7 @@ object LoreDiffApi {
                     size = entry.size,
                     action = LoreFileAction.of(entry.action),
                     metadata = metadata[revision.hex] ?: LoreMetadata.EMPTY,
-                    address = entry.address.hash.toHex() + entry.address.context.toHex(),
+                    address = entry.address.hash.toHex() + "-" + entry.address.context.toHex(),
                 )
             }
         }

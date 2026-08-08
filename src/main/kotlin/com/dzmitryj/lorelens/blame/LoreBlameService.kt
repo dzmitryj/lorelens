@@ -88,17 +88,14 @@ class LoreBlameService(private val project: Project) {
 
     /** Line count of the file as it stood at [record]. */
     private fun lineCount(root: Path, relativePath: String, record: LoreHistoryRecord): Int {
-        val directory = Files.createTempDirectory("lorelens-blame")
-        val output = directory.resolve("content")
         return try {
-            LoreStatusApi.writeFile(root, relativePath, record.revision.hex, output)
-            Files.readAllLines(output).size
+            // By address: the path form refuses a name gone from the current
+            // tree, which is every pre-move revision of a renamed file.
+            String(LoreStatusApi.readFileAt(root, record.address), Charsets.UTF_8)
+                .lineSequence().count()
         } catch (e: RuntimeException) {
             log.warn("Cannot read $relativePath at ${record.revision.short}", e)
             0
-        } finally {
-            Files.deleteIfExists(output)
-            Files.deleteIfExists(directory)
         }
     }
 

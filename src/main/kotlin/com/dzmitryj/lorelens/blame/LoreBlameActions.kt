@@ -89,7 +89,8 @@ private class ShowRevisionDiffAction(
 
     private fun content(filePath: FilePath, at: LoreHistoryRecord): DiffContent? {
         val revision = LoreRevisionNumber(at.revision, at.number)
-        val bytes = LoreContentRevision(root, filePath, relativePath, revision).contentAsBytes
+        // By address: the record's path is unreadable once the file moved.
+        val bytes = LoreContentRevision(root, filePath, at.path, revision, address = at.address).contentAsBytes
             ?: return null
         return DiffContentFactory.getInstance()
             .create(project, String(bytes, Charsets.UTF_8), filePath)

@@ -135,7 +135,7 @@ class LoreHistoryProvider(private val project: Project) : VcsHistoryProvider {
         override fun getChangedRepositoryPath() = null
 
         override fun loadContent(): ByteArray? =
-            LoreContentRevision(root, filePath, record.path, number).contentAsBytes
+            LoreContentRevision(root, filePath, record.path, number, address = record.address).contentAsBytes
 
         // Deprecated but still abstract on VcsFileContent, and no platform base
         // class implements it, so it has to be overridden.

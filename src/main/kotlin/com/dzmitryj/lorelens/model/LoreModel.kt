@@ -82,8 +82,18 @@ data class LoreLock(val path: String, val owner: String, val lockedAt: Long)
 /** Unified diff text for one file. */
 data class LoreFilePatch(val path: String, val patch: String, val action: LoreFileAction)
 
-/** One file changed between two revisions. Carries no patch text. */
-data class LoreRevisionChange(val path: String, val action: LoreFileAction)
+/**
+ * One file changed between two revisions. Carries no patch text, but does
+ * carry both sides' content addresses: content is only reachable by address
+ * once a file has been moved or deleted, and null marks the side that does
+ * not exist.
+ */
+data class LoreRevisionChange(
+    val path: String,
+    val action: LoreFileAction,
+    val oldAddress: String? = null,
+    val newAddress: String? = null,
+)
 
 /**
  * One appearance of a file in history. [action] is exact rather than inferred:

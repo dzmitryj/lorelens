@@ -634,6 +634,97 @@ class LoreRepositoryIntegrationTest {
         assertTrue("expected the revert commit, got $subjects", subjects.contains("undo second"))
     }
 
+    /**
+     * A committed move diffs as an ADD of the new path and a DELETE of the old
+     * one -- there is no MOVE row -- which is why the change builders need no
+     * move case: the before side of the ADD legitimately does not exist.
+     */
+    @Test
+    fun `a committed move diffs as add plus delete`() {
+        repository.resolve("was.txt").writeText("content")
+        LoreWriteApi.stage(repository, listOf("was.txt"))
+        LoreWriteApi.commit(repository, "add")
+        val before = LoreStatusApi.status(repository, scan = true).revision!!.revision.hex
+
+        Files.move(repository.resolve("was.txt"), repository.resolve("now.txt"))
+        LoreWriteApi.stageMove(repository, "was.txt", "now.txt")
+        LoreWriteApi.commit(repository, "move")
+        val after = LoreStatusApi.status(repository, scan = true).revision!!.revision.hex
+
+        val changes = LoreDiffApi.revisionDiff(repository, before, after)
+            .associate { it.path to it.action }
+
+        assertEquals(LoreFileAction.ADD, changes["now.txt"])
+        assertEquals(LoreFileAction.DELETE, changes["was.txt"])
+    }
+
+    /**
+     * The bug the console caught: content at a pre-move revision is only
+     * readable under the record's own path, not the file's current name.
+     */
+    @Test
+    fun `content across a move reads through the record's address`() {
+        repository.resolve("was.txt").writeText("original")
+        LoreWriteApi.stage(repository, listOf("was.txt"))
+        LoreWriteApi.commit(repository, "add")
+
+        Files.move(repository.resolve("was.txt"), repository.resolve("now.txt"))
+        LoreWriteApi.stageMove(repository, "was.txt", "now.txt")
+        LoreWriteApi.commit(repository, "move")
+
+        val records = LoreDiffApi.fileHistory(repository, "now.txt")
+        val preMove = records.first { it.path == "was.txt" }
+
+        // By address, the only form that works once the name is gone from
+        // the current tree. Output constraints are inside readFileAt.
+        val bytes = LoreStatusApi.readFileAt(repository, preMove.address)
+        assertEquals("original", String(bytes, Charsets.UTF_8))
+
+        // The current name at that revision does not exist; that read is the
+        // one that used to run, and fail, from blame.
+        val wrong = runCatching {
+            LoreStatusApi.writeFile(
+                repository,
+                "now.txt",
+                preMove.revision.hex,
+                Files.createTempDirectory("lore-wrong").resolve("content"),
+            )
+        }
+        assertTrue("expected the current-name read to fail", wrong.isFailure)
+    }
+
+    /**
+     * What rollback sends where, pinned against the server: reset restores a
+     * file with a committed base; a staged add or move must unstage instead --
+     * reset on those is INVALID_ARGUMENTS.
+     */
+    @Test
+    fun `rollback verbs behave as the rollback environment assumes`() {
+        repository.resolve("keep.txt").writeText("committed")
+        LoreWriteApi.stage(repository, listOf("keep.txt"))
+        LoreWriteApi.commit(repository, "base")
+
+        // Staged add: reset refuses, unstage rolls it back.
+        repository.resolve("staged.txt").writeText("new")
+        LoreWriteApi.stage(repository, listOf("staged.txt"))
+        assertTrue(runCatching { LoreWriteApi.reset(repository, listOf("staged.txt")) }.isFailure)
+        LoreWriteApi.unstage(repository, listOf("staged.txt"))
+
+        // Staged move: unstage the new path, reset the old; content comes back.
+        Files.move(repository.resolve("keep.txt"), repository.resolve("kept.txt"))
+        LoreWriteApi.stageMove(repository, "keep.txt", "kept.txt")
+        assertTrue(runCatching { LoreWriteApi.reset(repository, listOf("kept.txt")) }.isFailure)
+        LoreWriteApi.unstage(repository, listOf("kept.txt"))
+        LoreWriteApi.reset(repository, listOf("keep.txt"))
+        assertEquals("committed", repository.resolve("keep.txt").toFile().readText())
+    }
+
+    /** Generated and ignored files have no history; that is not an error. */
+    @Test
+    fun `file history of an untracked path is empty`() {
+        assertEquals(emptyList<Any>(), LoreDiffApi.fileHistory(repository, "never/added.json"))
+    }
+
     @Test
     fun `hashing reports content addresses`() {
         repository.resolve("d.txt").writeText("addressable")

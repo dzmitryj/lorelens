@@ -148,6 +148,40 @@ object LoreStatusApi {
         }
     }
 
+    /**
+     * Content by its address rather than a path and revision.
+     *
+     * This is what any historical read wants: path-and-revision resolution
+     * refuses a name that is gone from the current tree, which is the state of
+     * every deleted or moved file. Two constraints, both established against a
+     * real server: the output must lie inside the repository, and it must not
+     * exist yet -- hence a uniquely-named file under .lore, removed after.
+     */
+    fun readFileAt(root: Path, address: String): ByteArray {
+        val output = root.resolve(".lore").resolve("lorelens-read-${COUNTER.incrementAndGet()}")
+        return try {
+            Arena.ofConfined().use { arena ->
+                val args = LoreArgs(arena)
+                val globals = args.globals(root)
+                val options = arena.allocate(lore_file_write_args_t.LAYOUT)
+                args.writeString(lore_file_write_args_t.address(options), address)
+                args.writeString(lore_file_write_args_t.output(options), output.toString())
+
+                LoreClient.require(
+                    EventPump.call(arena) { callback ->
+                        LoreFunctions.lore_file_write.invokeExact(globals, options, callback) as Int
+                    },
+                    "read $address",
+                )
+            }
+            java.nio.file.Files.readAllBytes(output)
+        } finally {
+            java.nio.file.Files.deleteIfExists(output)
+        }
+    }
+
+    private val COUNTER = java.util.concurrent.atomic.AtomicLong()
+
     private fun RepositoryStatusFileEvent.toModel() = LoreFileStatus(
         path = path,
         size = size,

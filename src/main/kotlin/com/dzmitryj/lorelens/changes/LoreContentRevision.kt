@@ -32,6 +32,12 @@ class LoreContentRevision(
     private val filePath: FilePath,
     private val relativePath: String,
     private val revision: LoreRevisionNumber,
+    /**
+     * When set, content comes by address instead of path-and-revision. The
+     * path form refuses names gone from the current tree, so every read of a
+     * moved or deleted file's history needs this.
+     */
+    private val address: String? = null,
 ) : ByteBackedContentRevision {
 
     override fun getFile(): FilePath = filePath
@@ -39,9 +45,11 @@ class LoreContentRevision(
     override fun getRevisionNumber(): VcsRevisionNumber = revision
 
     override fun getContentAsBytes(): ByteArray? {
-        if (revision.id.isNone) return null
+        if (address == null && revision.id.isNone) return null
 
-        val key = Key(root, relativePath, revision.id.hex)
+        // Content is addressed, so an address is the perfect cache key; the
+        // path form keys on where and when instead.
+        val key = Key(root, address ?: relativePath, address ?: revision.id.hex)
         cache[key]?.let { return it }
 
         return try {
@@ -59,6 +67,8 @@ class LoreContentRevision(
      * with a name inside it, never a temp file.
      */
     private fun fetch(): ByteArray {
+        if (address != null) return LoreStatusApi.readFileAt(root, address)
+
         val temp = scratch.resolve("content-${counter.incrementAndGet()}")
         return try {
             LoreStatusApi.writeFile(root, relativePath, revision.id.hex, temp)

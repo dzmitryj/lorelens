@@ -559,12 +559,21 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         return LoreDiffApi.revisionDiff(root, older?.revision?.hex.orEmpty(), newer.revision.hex)
             .map { changed ->
                 val filePath = LocalFilePath(root.resolve(changed.path).toString(), false)
-                val after = LoreContentRevision(root, filePath, changed.path, newerRevision)
-                val before = olderRevision?.let { LoreContentRevision(root, filePath, changed.path, it) }
+                // By address on both sides: whether a side exists is what the
+                // addresses say, and content by path is unreadable the moment
+                // a file has since been moved or deleted.
+                val after = changed.newAddress?.let {
+                    LoreContentRevision(root, filePath, changed.path, newerRevision, address = it)
+                }
+                val before = changed.oldAddress?.let { at ->
+                    (olderRevision ?: newerRevision).let {
+                        LoreContentRevision(root, filePath, changed.path, it, address = at)
+                    }
+                }
 
-                when (changed.action) {
-                    LoreFileAction.ADD -> Change(null, after, FileStatus.ADDED)
-                    LoreFileAction.DELETE -> Change(before, null, FileStatus.DELETED)
+                when {
+                    before == null -> Change(null, after, FileStatus.ADDED)
+                    after == null -> Change(before, null, FileStatus.DELETED)
                     else -> Change(before, after, FileStatus.MODIFIED)
                 }
             }

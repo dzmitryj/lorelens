@@ -224,12 +224,16 @@ class LoreBranchGraphTab(private val project: Project) : ChangesViewContentProvi
 
         return LoreDiffApi.revisionDiff(root, parent?.hex.orEmpty(), entry.revision.hex).map { changed ->
             val filePath = LocalFilePath(root.resolve(changed.path).toString(), false)
-            val after = LoreContentRevision(root, filePath, changed.path, newer)
-            val before = older?.let { LoreContentRevision(root, filePath, changed.path, it) }
+            val after = changed.newAddress?.let {
+                LoreContentRevision(root, filePath, changed.path, newer, address = it)
+            }
+            val before = changed.oldAddress?.let { at ->
+                (older ?: newer).let { LoreContentRevision(root, filePath, changed.path, it, address = at) }
+            }
 
-            when (changed.action) {
-                LoreFileAction.ADD -> Change(null, after, FileStatus.ADDED)
-                LoreFileAction.DELETE -> Change(before, null, FileStatus.DELETED)
+            when {
+                before == null -> Change(null, after, FileStatus.ADDED)
+                after == null -> Change(before, null, FileStatus.DELETED)
                 else -> Change(before, after, FileStatus.MODIFIED)
             }
         }
