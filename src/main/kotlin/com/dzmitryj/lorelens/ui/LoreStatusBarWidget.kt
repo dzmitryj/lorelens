@@ -141,6 +141,6 @@ class LoreStatusBarWidget(project: Project) : EditorBasedStatusBarPopup(project,
     }
 
     private companion object {
-        const val LOG_TAB = "LoreLens"
+        const val LOG_TAB = "History"
     }
 }

@@ -3,8 +3,6 @@
     <name>LoreLens</name>
     <dependencies>
         <plugin id="com.intellij.modules.vcs"/>
-        <!-- The Log tool window, which hosts the logProvider extension point. -->
-        <module name="intellij.platform.vcs.log.impl"/>
     </dependencies>
 
     <resource-bundle>messages.LoreLensBundle</resource-bundle>
@@ -13,7 +11,6 @@
         <vcs name="LoreLens" vcsClass="com.dzmitryj.lorelens.LoreVcs" displayName="LoreLens"
              administrativeAreaName=".lore" areChildrenValidMappings="true"/>
         <vcsRootChecker implementation="com.dzmitryj.lorelens.repo.LoreRootChecker"/>
-        <logProvider implementation="com.dzmitryj.lorelens.log.LoreVcsLogProvider"/>
         <vfs.asyncListener implementation="com.dzmitryj.lorelens.dirty.LoreAsyncFileListener"/>
         <editorFactoryListener implementation="com.dzmitryj.lorelens.blame.LoreBlameEditorListener"/>
         <postStartupActivity implementation="com.dzmitryj.lorelens.repo.LoreMappingMigration"/>
@@ -36,9 +33,12 @@
                         implementationClass="com.intellij.openapi.vcs.changes.ignore.lang.IgnoreCommenter"/>
         <codeInsight.lineMarkerProvider language="LoreIgnore"
                                         implementationClass="com.intellij.openapi.vcs.changes.ignore.codeInsight.IgnoreDirectoryMarkerProvider"/>
-        <changesViewContent id="LoreLensLog" tabName="LoreLens"
+        <changesViewContent id="LoreLensHistory" tabName="History"
                             className="com.dzmitryj.lorelens.ui.LoreLogTab"
                             predicateClassName="com.dzmitryj.lorelens.ui.LoreLogTabVisibility"/>
+        <changesViewContent id="LoreLensConsole" tabName="Console"
+                            className="com.dzmitryj.lorelens.ui.LoreConsoleTab"
+                            predicateClassName="com.dzmitryj.lorelens.ui.LoreConsoleTabVisibility"/>
     </extensions>
 
     <actions>

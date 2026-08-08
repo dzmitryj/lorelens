@@ -29,10 +29,6 @@ dependencies {
 
         // Pairs with the com.intellij.modules.vcs entry in plugin.xml.
         bundledModule("intellij.platform.vcs.impl")
-        // The Log tool window: VcsLogProvider and the objects factory.
-        bundledModule("intellij.platform.vcs.log")
-        bundledModule("intellij.platform.vcs.log.graph")
-        bundledModule("intellij.platform.vcs.log.impl")
 
         pluginVerifier()
         zipSigner()
