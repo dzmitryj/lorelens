@@ -3,6 +3,8 @@
     <name>LoreLens</name>
     <dependencies>
         <plugin id="com.intellij.modules.vcs"/>
+        <!-- The Log tool window, which hosts the logProvider extension point. -->
+        <module name="intellij.platform.vcs.log.impl"/>
     </dependencies>
 
     <resource-bundle>messages.LoreLensBundle</resource-bundle>
@@ -11,6 +13,7 @@
         <vcs name="LoreLens" vcsClass="com.dzmitryj.lorelens.LoreVcs" displayName="LoreLens"
              administrativeAreaName=".lore" areChildrenValidMappings="true"/>
         <vcsRootChecker implementation="com.dzmitryj.lorelens.repo.LoreRootChecker"/>
+        <logProvider implementation="com.dzmitryj.lorelens.log.LoreVcsLogProvider"/>
         <vfs.asyncListener implementation="com.dzmitryj.lorelens.dirty.LoreAsyncFileListener"/>
         <editorFactoryListener implementation="com.dzmitryj.lorelens.blame.LoreBlameEditorListener"/>
         <postStartupActivity implementation="com.dzmitryj.lorelens.repo.LoreMappingMigration"/>
