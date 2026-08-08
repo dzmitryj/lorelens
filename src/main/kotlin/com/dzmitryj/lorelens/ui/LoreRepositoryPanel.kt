@@ -33,6 +33,7 @@ class LoreRepositoryPanel(
     private val onPush: () -> Unit,
     private val onBrowse: (LoreBranch) -> Unit,
     private val onSwitch: (LoreBranch) -> Unit,
+    private val onMerge: (LoreBranch) -> Unit,
     private val onReturnToCurrent: () -> Unit,
     private val branches: () -> List<LoreBranch>,
 ) : JPanel(BorderLayout()) {
@@ -171,6 +172,11 @@ class LoreRepositoryPanel(
             all.filterNot { it.name == current }.forEach { branch ->
                 add(BranchAction(branch, browse = false))
             }
+
+            addSeparator(LoreLensBundle.message("repo.popup.merge"))
+            all.filterNot { it.name == current }.forEach { branch ->
+                add(MergeAction(branch))
+            }
         }
 
         JBPopupFactory.getInstance()
@@ -191,6 +197,14 @@ class LoreRepositoryPanel(
 
         override fun actionPerformed(e: AnActionEvent) =
             if (browse) onBrowse(branch) else onSwitch(branch)
+    }
+
+    private inner class MergeAction(private val branch: LoreBranch) :
+        AnAction(branch.name, null, AllIcons.Vcs.Merge) {
+
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) = onMerge(branch)
     }
 
     private inner class SyncToLatestAction : AnAction(

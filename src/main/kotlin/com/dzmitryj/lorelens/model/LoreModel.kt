@@ -128,3 +128,8 @@ data class LoreBranch(
     /** Revisions this branch was created from, nearest first. */
     val branchPoints: List<LoreRevisionId>,
 )
+
+/** What a merge would touch, and where it would stop. */
+data class LoreMergePreview(val changed: List<String>, val conflicted: List<String>) {
+    val isClean: Boolean get() = conflicted.isEmpty()
+}

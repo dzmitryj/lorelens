@@ -3,9 +3,12 @@ package com.dzmitryj.lorelens.api
 import com.dzmitryj.lorelens.ffi.EventPump
 import com.dzmitryj.lorelens.ffi.LoreArgs
 import com.dzmitryj.lorelens.ffi.LoreResult
+import com.dzmitryj.lorelens.ffi.generated.BranchDiffChangeEvent
+import com.dzmitryj.lorelens.ffi.generated.BranchDiffConflictEvent
 import com.dzmitryj.lorelens.ffi.generated.BranchListEntryEvent
 import com.dzmitryj.lorelens.ffi.generated.LoreFunctions
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_create_args_t
+import com.dzmitryj.lorelens.ffi.generated.lore_branch_diff_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_list_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_abort_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_resolve_args_t
@@ -16,6 +19,7 @@ import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_unresolve_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_switch_args_t
 import com.dzmitryj.lorelens.model.LoreBranch
 import com.dzmitryj.lorelens.model.LoreBranchLocation
+import com.dzmitryj.lorelens.model.LoreMergePreview
 import com.dzmitryj.lorelens.model.LoreRevisionId
 import java.lang.foreign.Arena
 import java.nio.file.Path
@@ -52,6 +56,35 @@ object LoreBranchApi {
                     LoreFunctions.lore_branch_create.invokeExact(globals, options, callback) as Int
                 },
                 "create branch $branch",
+            )
+        }
+
+    /**
+     * What merging [source] into [target] would do, without doing it: the files
+     * it would touch, and the ones it could not reconcile.
+     */
+    fun previewMerge(root: Path, source: String, target: String = ""): LoreMergePreview =
+        Arena.ofConfined().use { arena ->
+            val args = LoreArgs(arena)
+            val globals = args.globals(root)
+            val options = arena.allocate(lore_branch_diff_args_t.LAYOUT)
+            args.writeString(lore_branch_diff_args_t.source(options), source)
+            if (target.isNotEmpty()) {
+                args.writeString(lore_branch_diff_args_t.target(options), target)
+            }
+
+            val result = LoreClient.require(
+                EventPump.call(arena) { callback ->
+                    LoreFunctions.lore_branch_diff.invokeExact(globals, options, callback) as Int
+                },
+                "preview merge of $source",
+            )
+
+            LoreMergePreview(
+                changed = result.filter<BranchDiffChangeEvent>().map { it.change.path },
+                conflicted = result.filter<BranchDiffConflictEvent>()
+                    .map { it.source_change.path.ifEmpty { it.target_change.path } }
+                    .distinct(),
             )
         }
 

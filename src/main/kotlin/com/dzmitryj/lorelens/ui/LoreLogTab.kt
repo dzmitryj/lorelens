@@ -14,6 +14,7 @@ import com.dzmitryj.lorelens.model.LoreBranchLocation
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionChain
 import com.dzmitryj.lorelens.repo.LoreBranchSwitcher
+import com.dzmitryj.lorelens.repo.LoreMerger
 import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.dzmitryj.lorelens.update.LoreSyncSession
@@ -96,6 +97,11 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         onSwitch = { branch ->
             LoreRootFinder.mappedRoots(project).firstOrNull()?.let { root ->
                 LoreBranchSwitcher.switch(project, root.toNioPath(), branch.name)
+            }
+        },
+        onMerge = { branch ->
+            LoreRootFinder.mappedRoots(project).firstOrNull()?.let { root ->
+                LoreMerger.merge(project, root.toNioPath(), branch.name)
             }
         },
         onReturnToCurrent = {
