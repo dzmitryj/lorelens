@@ -37,6 +37,12 @@ dependencies {
 
 val pluginDisplayName = "LoreLens"
 val pinnedLoreVersion = providers.gradleProperty("loreVersion").get()
+
+// <lore version>.<plugin revision>: 0.8.6.1 is the first release against
+// liblore v0.8.6. The lore part answers "which library does this bundle"
+// without opening the zip; the last part is this plugin's own counter and
+// resets when the lore version moves.
+version = pinnedLoreVersion.removePrefix("v") + "." + providers.gradleProperty("pluginRevision").get()
 val verifyAgainstIde = providers.gradleProperty("verifyAgainstIde").orNull
 val loreNativeDir = layout.buildDirectory.dir("lore-native/$pinnedLoreVersion")
 val loreServerDir = layout.buildDirectory.dir("lore-server/$pinnedLoreVersion")
@@ -106,7 +112,24 @@ intellijPlatform {
             changed. This plugin tells it, as you edit, so the Changes view stays accurate without ever
             scanning a large repository.
             <br><br>
+            <ul>
+                <li>Local Changes with staging, locks, and conflict resolution -- merge and revert both</li>
+                <li>History: every branch in one graph, branch-owned lanes and colours, merge direction visible</li>
+                <li>Branch Graph: the repository as swimlanes, with switch and merge either direction from a right-click</li>
+                <li>Blame hints in the editor, revision diffs, file history across renames</li>
+                <li>A Lore console with optional native debug logging</li>
+            </ul>
             Not affiliated with or endorsed by Epic Games. Bundles the Lore shared library (MIT).
+        """.trimIndent()
+
+        changeNotes = """
+            <b>0.8.6.1</b> -- first release, against liblore v0.8.6.
+            <ul>
+                <li>Full merge and revert workflows, both directions, with conflict resolution</li>
+                <li>Branch-aware history and branch graph with one colour per branch</li>
+                <li>File locks, blame, per-file history following renames</li>
+                <li>Historical content read by content address, correct across moves and deletes</li>
+            </ul>
         """.trimIndent()
     }
 
