@@ -12,8 +12,10 @@ import com.intellij.openapi.project.ProjectManager
  * is deliberately free of IDE types -- so operations are broadcast to whichever
  * projects are open rather than routed to one.
  *
- * Every check here is about staying free when nobody is watching: this sits on
- * the path of every Lore call, including the per-file ones.
+ * Recording is always on: it is a bounded append of one string, and gating it
+ * on an open console meant everything before the tab's first open was lost and
+ * the console opened blank. What stays gated is the expensive part -- verbose
+ * per-file detail, and live printing, which only happens with a subscriber.
  */
 object LoreOperationLog {
 
@@ -32,10 +34,7 @@ object LoreOperationLog {
         if (ApplicationManager.getApplication() == null) return
 
         openProjects().forEach { project ->
-            runCatching {
-                val log = LoreConsoleLog.getInstance(project)
-                if (log.isListening) report(log)
-            }
+            runCatching { report(LoreConsoleLog.getInstance(project)) }
         }
     }
 

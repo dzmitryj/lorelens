@@ -40,14 +40,6 @@ class LoreConsoleLog {
     private val entries = ConcurrentLinkedQueue<Entry>()
     private val listeners = mutableListOf<(Entry) -> Unit>()
 
-    /**
-     * Nothing is recorded while no console is open. This is checked on the path
-     * of every Lore call, including the per-file ones, so it has to be cheap
-     * and it has to come first.
-     */
-    @Volatile
-    var isListening: Boolean = false
-        private set
 
     /** Reads are only worth showing when someone has asked for everything. */
     @Volatile
@@ -59,18 +51,21 @@ class LoreConsoleLog {
 
     fun error(text: String) = add(Entry(System.currentTimeMillis(), text, Kind.ERROR))
 
-    fun history(): List<Entry> = entries.toList()
-
+    /**
+     * Hands back everything recorded so far and starts live delivery, under the
+     * same lock `add` takes, so no entry can fall between the replay and the
+     * subscription.
+     */
     @Synchronized
-    fun subscribe(listener: (Entry) -> Unit) {
+    fun subscribe(listener: (Entry) -> Unit): List<Entry> {
+        val replay = entries.toList()
         listeners += listener
-        isListening = true
+        return replay
     }
 
     @Synchronized
     fun unsubscribe(listener: (Entry) -> Unit) {
         listeners -= listener
-        isListening = listeners.isNotEmpty()
     }
 
     fun clear() = entries.clear()
@@ -99,12 +94,10 @@ class LoreConsoleTab(private val project: Project) : ChangesViewContentProvider 
             .console
 
         val log = LoreConsoleLog.getInstance(project)
-        log.history().forEach { console.print(render(it), typeOf(it.kind)) }
-
         val listener: (LoreConsoleLog.Entry) -> Unit = { entry ->
             console.print(render(entry), typeOf(entry.kind))
         }
-        log.subscribe(listener)
+        log.subscribe(listener).forEach { console.print(render(it), typeOf(it.kind)) }
 
         val actions = DefaultActionGroup(ClearAction(console, log), VerboseAction(log))
 

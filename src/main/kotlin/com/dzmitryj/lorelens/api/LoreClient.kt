@@ -76,7 +76,7 @@ object LoreClient {
      */
     fun require(result: LoreResult, what: String, notable: Boolean = false): LoreResult {
         if (result.succeeded) {
-            if (notable) LoreOperationLog.succeeded(what)
+            if (notable) LoreOperationLog.succeeded(what) else LoreOperationLog.detail { what }
             return result
         }
 

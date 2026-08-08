@@ -75,7 +75,7 @@ abstract class LoreResolveAction(private val messageKey: String) : AnAction() {
                     Messages.showErrorDialog(
                         project,
                         failures.joinToString("\n") { (root, error) -> "$root: ${error.message}" },
-                        LoreLensBundle.message("merge.failed"),
+                        LoreLensBundle.message("merge.resolve.failed"),
                     )
                 }
             }
