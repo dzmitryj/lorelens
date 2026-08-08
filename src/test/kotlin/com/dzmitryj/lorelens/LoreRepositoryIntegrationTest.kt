@@ -525,6 +525,34 @@ class LoreRepositoryIntegrationTest {
         assertTrue("both parents must be real", merge.parents.none { it.isNone })
     }
 
+    /**
+     * History for a branch includes the ancestry it was cut from, even with
+     * only_branch set. The branch graph assumed otherwise and would have put
+     * shared revisions on every lane that inherits them, so attribution is done
+     * from the branch points instead. Pinned because that design depends on it.
+     */
+    @Test
+    fun `history for a named branch still includes the ancestry it was cut from`() {
+        repository.resolve("shared.txt").writeText("shared")
+        LoreWriteApi.stage(repository, listOf("shared.txt"))
+        LoreWriteApi.commit(repository, "shared work")
+        val main = LoreStatusApi.status(repository, scan = true).revision!!.branchName
+
+        LoreBranchApi.create(repository, "lane")
+        LoreBranchApi.switch(repository, "lane")
+        repository.resolve("lane.txt").writeText("lane only")
+        LoreWriteApi.stage(repository, listOf("lane.txt"))
+        LoreWriteApi.commit(repository, "lane work")
+
+        val onLane = LoreHistoryApi.history(repository, 50, branch = "lane").map { it.subject }
+
+        assertTrue("expected the branch's own revision, got $onLane", onLane.contains("lane work"))
+        assertTrue(
+            "expected $main's ancestry to come through too, got $onLane",
+            onLane.contains("shared work"),
+        )
+    }
+
     @Test
     fun `hashing reports content addresses`() {
         repository.resolve("d.txt").writeText("addressable")
