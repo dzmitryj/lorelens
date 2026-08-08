@@ -553,6 +553,87 @@ class LoreRepositoryIntegrationTest {
         )
     }
 
+    /** The reverse direction: the current branch's work lands on the target. */
+    @Test
+    fun `merge current into lands the work on the target branch`() {
+        repository.resolve("base.txt").writeText("base")
+        LoreWriteApi.stage(repository, listOf("base.txt"))
+        LoreWriteApi.commit(repository, "base")
+        // The merge lands on the target's remote state, so both ends have to
+        // exist on the server first.
+        LoreWriteApi.push(repository)
+        val main = LoreStatusApi.status(repository, scan = true).revision!!.branchName
+
+        LoreBranchApi.create(repository, "feature")
+        LoreBranchApi.switch(repository, "feature")
+        repository.resolve("feature.txt").writeText("feature work")
+        LoreWriteApi.stage(repository, listOf("feature.txt"))
+        LoreWriteApi.commit(repository, "feature work")
+        LoreWriteApi.push(repository)
+
+        // Preview sees the same changes the merge will make.
+        val preview = LoreBranchApi.previewMerge(repository, source = "feature", target = main)
+        assertTrue("expected a clean preview, got ${preview.conflicted}", preview.isClean)
+        assertTrue("expected the feature file, got ${preview.changed}", preview.changed.any { it.endsWith("feature.txt") })
+
+        LoreBranchApi.mergeCurrentInto(repository, main, "integrate feature into $main")
+
+        LoreBranchApi.switch(repository, main)
+        val subjects = LoreHistoryApi.history(repository, 20).map { it.subject.orEmpty() }
+        assertTrue("expected the merge on $main, got $subjects", subjects.any { it.contains("integrate feature") })
+    }
+
+    /** A resolve taken by mistake is recoverable without aborting the merge. */
+    @Test
+    fun `restart re-materializes a conflict after a wrong resolve`() {
+        repository.resolve("both.txt").writeText("base")
+        LoreWriteApi.stage(repository, listOf("both.txt"))
+        LoreWriteApi.commit(repository, "base")
+        val main = LoreStatusApi.status(repository, scan = true).revision!!.branchName
+
+        LoreBranchApi.create(repository, "other")
+        LoreBranchApi.switch(repository, "other")
+        repository.resolve("both.txt").writeText("theirs")
+        LoreWriteApi.stage(repository, listOf("both.txt"))
+        LoreWriteApi.commit(repository, "their side")
+
+        LoreBranchApi.switch(repository, main)
+        repository.resolve("both.txt").writeText("mine")
+        LoreWriteApi.stage(repository, listOf("both.txt"))
+        LoreWriteApi.commit(repository, "my side")
+
+        runCatching { LoreBranchApi.mergeInto(repository, "other", "conflicting merge") }
+        LoreBranchApi.resolveMine(repository, listOf("both.txt"))
+
+        LoreBranchApi.restartMerge(repository)
+
+        // The file is conflicted again rather than silently resolved.
+        val status = LoreStatusApi.status(repository, scan = true)
+        assertTrue(
+            "expected both.txt conflicted after restart, got ${status.files}",
+            status.files.any { it.path.endsWith("both.txt") },
+        )
+        LoreBranchApi.abortMerge(repository)
+    }
+
+    @Test
+    fun `revert applies the inverse of a revision`() {
+        repository.resolve("undo.txt").writeText("first")
+        LoreWriteApi.stage(repository, listOf("undo.txt"))
+        LoreWriteApi.commit(repository, "first")
+
+        repository.resolve("undo.txt").writeText("second")
+        LoreWriteApi.stage(repository, listOf("undo.txt"))
+        LoreWriteApi.commit(repository, "second")
+        val target = LoreHistoryApi.history(repository, 5).first { it.subject == "second" }
+
+        com.dzmitryj.lorelens.api.LoreRevertApi.revert(repository, target.revision.hex, "undo second")
+
+        assertEquals("first", repository.resolve("undo.txt").toFile().readText())
+        val subjects = LoreHistoryApi.history(repository, 5).map { it.subject }
+        assertTrue("expected the revert commit, got $subjects", subjects.contains("undo second"))
+    }
+
     @Test
     fun `hashing reports content addresses`() {
         repository.resolve("d.txt").writeText("addressable")
