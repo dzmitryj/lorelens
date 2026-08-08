@@ -1,10 +1,13 @@
 package com.dzmitryj.lorelens.ui
 
 import com.dzmitryj.lorelens.LoreLensBundle
+import com.dzmitryj.lorelens.api.LoreBranchApi
 import com.dzmitryj.lorelens.lock.LoreLockService
+import com.dzmitryj.lorelens.repo.LoreBranchSwitcher
 import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -20,6 +23,7 @@ import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.openapi.wm.impl.status.EditorBasedStatusBarPopup
 import java.awt.datatransfer.StringSelection
+import java.nio.file.Path
 
 private const val WIDGET_ID = "LoreLensStatusBarWidget"
 
@@ -70,6 +74,8 @@ class LoreStatusBarWidget(project: Project) : EditorBasedStatusBarPopup(project,
             val held = LoreLockService.getInstance(project).heldByMe()
             if (held > 0) addSeparator(LoreLensBundle.message("widget.popup.locks", held))
 
+            add(SwitchBranchAction(root.toNioPath(), status.branchName))
+            addSeparator()
             ActionManager.getInstance().getAction("LoreLens.FullRescan")?.let(::add)
             add(ShowLogAction())
             add(CopyRevisionAction(status.revision.hex))
@@ -85,6 +91,33 @@ class LoreStatusBarWidget(project: Project) : EditorBasedStatusBarPopup(project,
     }
 
     override fun createInstance(project: Project): StatusBarWidget = LoreStatusBarWidget(project)
+
+    /** Nested so the branch list is only fetched when the popup is opened. */
+    private inner class SwitchBranchAction(private val root: Path, private val current: String) :
+        ActionGroup(LoreLensBundle.message("widget.popup.switch.branch"), true) {
+
+        init {
+            templatePresentation.icon = AllIcons.Vcs.Branch
+        }
+
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+
+        override fun getChildren(e: AnActionEvent?): Array<AnAction> =
+            runCatching { LoreBranchApi.list(root) }
+                .getOrDefault(emptyList())
+                .filterNot { it.isArchived || it.name == current }
+                .map { branch -> SwitchToAction(root, branch.name) }
+                .toTypedArray()
+    }
+
+    private inner class SwitchToAction(private val root: Path, private val branch: String) :
+        AnAction(branch, null, null) {
+
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) =
+            LoreBranchSwitcher.switch(project, root, branch)
+    }
 
     private inner class ShowLogAction :
         AnAction(LoreLensBundle.message("widget.popup.show.log"), null, AllIcons.Vcs.Branch) {
