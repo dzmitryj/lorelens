@@ -11,10 +11,12 @@ import java.nio.file.Path
 import javax.swing.JTable
 import javax.swing.table.TableCellRenderer
 
-/** One row: the repository it came from, and the revision. */
-typealias LogRow = Pair<Path, LoreHistoryEntry>
-
-val LogRow.entry: LoreHistoryEntry get() = second
+/**
+ * One row: the repository it came from, the revision, and whether this checkout
+ * has that revision yet. History is walked from the remote branch tip, so rows
+ * above the synced position are real revisions that simply are not here.
+ */
+data class LogRow(val root: Path, val entry: LoreHistoryEntry, val synced: Boolean)
 
 /**
  * Columns render through SimpleColoredComponent rather than the default
@@ -36,16 +38,22 @@ abstract class LoreLogColumn(name: String) : ColumnInfo<LogRow, LogRow>(name) {
             row: Int,
             column: Int,
         ) {
-            @Suppress("UNCHECKED_CAST")
             val item = value as? LogRow ?: return
-            render(item.entry)
+            render(item)
             SpeedSearchUtil.applySpeedSearchHighlighting(table, this, true, selected)
         }
     }
 
-    protected abstract fun ColoredTableCellRenderer.render(entry: LoreHistoryEntry)
+    protected abstract fun ColoredTableCellRenderer.render(row: LogRow)
+
+    /** Unsynced revisions read as pending rather than as history. */
+    protected fun attributes(row: LogRow): SimpleTextAttributes =
+        if (row.synced) SimpleTextAttributes.REGULAR_ATTRIBUTES else SimpleTextAttributes.GRAYED_ATTRIBUTES
 
     companion object {
+        /** Room for the sort arrow and cell insets, which the string width misses. */
+        const val PADDING = 24
+
         val ALL: Array<ColumnInfo<LogRow, *>> = arrayOf(
             RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn(),
         )
@@ -56,10 +64,20 @@ private class RevisionColumn : LoreLogColumn(LoreLensBundle.message("log.column.
 
     override fun getComparator(): Comparator<LogRow> = compareBy { it.entry.number }
 
-    override fun getPreferredStringValue(): String = "999999"
+    // A max string caps the column; without one JTable splits the width evenly
+    // and the message, which is the only column worth reading, gets a quarter.
+    override fun getMaxStringValue(): String = "999999  ${LoreLensBundle.message("log.not.synced")}"
 
-    override fun ColoredTableCellRenderer.render(entry: LoreHistoryEntry) {
-        append(entry.number.toString(), SimpleTextAttributes.REGULAR_ATTRIBUTES)
+    override fun getAdditionalWidth(): Int = PADDING
+
+    override fun ColoredTableCellRenderer.render(row: LogRow) {
+        append(row.entry.number.toString(), attributes(row))
+        if (!row.synced) {
+            append(
+                "  ${LoreLensBundle.message("log.not.synced")}",
+                SimpleTextAttributes.GRAYED_ITALIC_ATTRIBUTES,
+            )
+        }
     }
 }
 
@@ -67,10 +85,12 @@ private class DateColumn : LoreLogColumn(LoreLensBundle.message("log.column.date
 
     override fun getComparator(): Comparator<LogRow> = compareBy { it.entry.timestampMillis ?: 0L }
 
-    override fun getPreferredStringValue(): String = "Yesterday 12:00"
+    override fun getMaxStringValue(): String = "Yesterday 12:00 PM"
 
-    override fun ColoredTableCellRenderer.render(entry: LoreHistoryEntry) {
-        entry.timestampMillis?.let {
+    override fun getAdditionalWidth(): Int = PADDING
+
+    override fun ColoredTableCellRenderer.render(row: LogRow) {
+        row.entry.timestampMillis?.let {
             append(DateFormatUtil.formatPrettyDateTime(it), SimpleTextAttributes.GRAYED_ATTRIBUTES)
         }
     }
@@ -80,13 +100,15 @@ private class AuthorColumn : LoreLogColumn(LoreLensBundle.message("log.column.au
 
     override fun getComparator(): Comparator<LogRow> = compareBy { it.entry.author.orEmpty() }
 
-    override fun getPreferredStringValue(): String = "firstname.lastname@example.com"
+    override fun getMaxStringValue(): String = "firstname.lastname@example.com"
 
-    override fun ColoredTableCellRenderer.render(entry: LoreHistoryEntry) {
-        append(entry.author.orEmpty(), SimpleTextAttributes.REGULAR_ATTRIBUTES)
+    override fun getAdditionalWidth(): Int = PADDING
 
-        val committer = entry.metadata.committer
-        if (committer != null && committer != entry.author) {
+    override fun ColoredTableCellRenderer.render(row: LogRow) {
+        append(row.entry.author.orEmpty(), attributes(row))
+
+        val committer = row.entry.metadata.committer
+        if (committer != null && committer != row.entry.author) {
             append(
                 LoreLensBundle.message("log.committed.by", committer),
                 SimpleTextAttributes.GRAYED_ATTRIBUTES,
@@ -99,9 +121,9 @@ private class MessageColumn : LoreLogColumn(LoreLensBundle.message("log.column.m
 
     override fun getComparator(): Comparator<LogRow> = compareBy { it.entry.subject.orEmpty() }
 
-    override fun ColoredTableCellRenderer.render(entry: LoreHistoryEntry) {
-        append(entry.subject.orEmpty(), SimpleTextAttributes.REGULAR_ATTRIBUTES)
-        entry.metadata.body?.let { body ->
+    override fun ColoredTableCellRenderer.render(row: LogRow) {
+        append(row.entry.subject.orEmpty(), attributes(row))
+        row.entry.metadata.body?.let { body ->
             append("  ${body.lineSequence().first()}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
         }
     }
