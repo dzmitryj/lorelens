@@ -54,6 +54,95 @@ object LoreMerger {
         }.queue()
     }
 
+    /**
+     * The reverse direction: the current branch's work lands on [target].
+     * Lore commits onto the target without materializing conflicts here, so a
+     * preview that reports conflicts stops the merge instead of starting it --
+     * resolving them needs the normal direction, on the target's checkout.
+     */
+    fun mergeCurrentInto(project: Project, root: Path, target: String) {
+        val current = LoreRepositoryState.getInstance(project).cached(root)?.branchName.orEmpty()
+
+        object : Task.Backgroundable(project, LoreLensBundle.message("merge.preview.progress", current), true) {
+            private var preview: LoreMergePreview? = null
+            private var failure: Throwable? = null
+
+            override fun run(indicator: ProgressIndicator) {
+                runCatching { LoreBranchApi.previewMerge(root, source = current, target = target) }
+                    .onSuccess { preview = it }
+                    .onFailure {
+                        failure = it
+                        log.warn("Cannot preview merge of $current into $target", it)
+                    }
+            }
+
+            override fun onFinished() {
+                val result = preview
+                if (result == null) {
+                    Messages.showErrorDialog(
+                        project,
+                        failure?.message ?: LoreLensBundle.message("merge.preview.failed", current),
+                        LoreLensBundle.message("merge.title"),
+                    )
+                    return
+                }
+
+                if (!result.isClean) {
+                    Messages.showErrorDialog(
+                        project,
+                        LoreLensBundle.message(
+                            "merge.into.conflicts",
+                            target,
+                            result.conflicted.size,
+                            result.conflicted.take(10).joinToString("\n"),
+                        ),
+                        LoreLensBundle.message("merge.title"),
+                    )
+                    return
+                }
+
+                val confirmed = Messages.showYesNoDialog(
+                    project,
+                    LoreLensBundle.message("merge.into.clean", target, result.changed.size),
+                    LoreLensBundle.message("merge.title"),
+                    LoreLensBundle.message("merge.run"),
+                    LoreLensBundle.message("merge.cancel"),
+                    Messages.getQuestionIcon(),
+                )
+                if (confirmed != Messages.YES) return
+
+                runInto(project, root, target)
+            }
+        }.queue()
+    }
+
+    private fun runInto(project: Project, root: Path, target: String) {
+        object : Task.Backgroundable(project, LoreLensBundle.message("merge.progress", target), true) {
+            private var failure: Throwable? = null
+
+            override fun run(indicator: ProgressIndicator) {
+                failure = runCatching {
+                    LoreBranchApi.mergeCurrentInto(root, target, LoreLensBundle.message("merge.into.message", target))
+                }.exceptionOrNull()?.also { log.warn("Cannot merge current branch into $target", it) }
+            }
+
+            override fun onFinished() {
+                LoreRepositoryState.getInstance(project).invalidate(root)
+                VcsDirtyScopeManager.getInstance(project).markEverythingDirty()
+
+                failure?.let {
+                    ApplicationManager.getApplication().invokeLater {
+                        Messages.showErrorDialog(
+                            project,
+                            it.message ?: LoreLensBundle.message("merge.failed", target),
+                            LoreLensBundle.message("merge.title"),
+                        )
+                    }
+                }
+            }
+        }.queue()
+    }
+
     private fun confirm(project: Project, root: Path, source: String, preview: LoreMergePreview) {
         val message = when {
             preview.isClean ->

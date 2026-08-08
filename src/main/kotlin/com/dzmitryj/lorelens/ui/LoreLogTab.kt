@@ -128,6 +128,11 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 LoreMerger.merge(project, root.toNioPath(), branch.name)
             }
         },
+        onMergeInto = { branch ->
+            LoreRootFinder.mappedRoots(project).firstOrNull()?.let { root ->
+                LoreMerger.mergeCurrentInto(project, root.toNioPath(), branch.name)
+            }
+        },
         onReturnToCurrent = {
             browsing = null
             branch = ""

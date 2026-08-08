@@ -148,10 +148,18 @@ class LoreBranchGraphTab(private val project: Project) : ChangesViewContentProvi
     }
 
     private fun branchMenu(branch: String, at: Point) {
-        val group = DefaultActionGroup(
-            SwitchBranchAction(branch),
-            MergeBranchAction(branch),
-        )
+        val current = LoreRepositoryState.getInstance(project)
+            .cached(root() ?: return)?.branchName
+
+        val group = DefaultActionGroup()
+        if (branch != current) {
+            group.add(SwitchBranchAction(branch))
+            // Both directions, both named for what they do. Merging a branch
+            // into itself is a no-op, so neither shows on the current lane.
+            group.add(MergeBranchAction(branch))
+            group.add(MergeCurrentIntoAction(branch))
+        }
+        if (group.childrenCount == 0) return
         showPopup(branch, group, at)
     }
 
@@ -296,6 +304,17 @@ class LoreBranchGraphTab(private val project: Project) : ChangesViewContentProvi
         override fun actionPerformed(e: AnActionEvent) {
             val path = root() ?: return
             LoreMerger.merge(project, path, branch)
+        }
+    }
+
+    private inner class MergeCurrentIntoAction(private val target: String) :
+        AnAction(LoreLensBundle.message("tree.merge.into"), null, AllIcons.Vcs.Merge) {
+
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val path = root() ?: return
+            LoreMerger.mergeCurrentInto(project, path, target)
         }
     }
 

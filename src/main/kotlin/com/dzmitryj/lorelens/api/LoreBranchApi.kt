@@ -12,6 +12,8 @@ import com.dzmitryj.lorelens.ffi.generated.lore_branch_diff_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_list_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_abort_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_resolve_args_t
+import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_into_args_t
+import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_restart_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_start_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_resolve_mine_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_resolve_theirs_args_t
@@ -108,6 +110,44 @@ object LoreBranchApi {
                 notable = true,
             )
         }
+
+    /**
+     * Merges the current branch into [target] -- the reverse direction. Lore
+     * applies the result onto the target directly, without materializing
+     * conflicts in this working copy, so callers preview first and refuse a
+     * conflicted merge rather than starting one that cannot be resolved here.
+     */
+    fun mergeCurrentInto(root: Path, target: String, message: String): LoreResult =
+        Arena.ofConfined().use { arena ->
+            val args = LoreArgs(arena)
+            val globals = args.globals(root)
+            val options = arena.allocate(lore_branch_merge_into_args_t.LAYOUT)
+            args.writeString(lore_branch_merge_into_args_t.branch(options), target)
+            args.writeString(lore_branch_merge_into_args_t.message(options), message)
+
+            LoreClient.require(
+                EventPump.call(arena) { callback ->
+                    LoreFunctions.lore_branch_merge_into.invokeExact(globals, options, callback) as Int
+                },
+                "merge current branch into $target",
+                notable = true,
+            )
+        }
+
+    /** Re-materializes conflicted files of the in-progress merge. */
+    fun restartMerge(root: Path): LoreResult = Arena.ofConfined().use { arena ->
+        val args = LoreArgs(arena)
+        val globals = args.globals(root)
+        val options = arena.allocate(lore_branch_merge_restart_args_t.LAYOUT)
+
+        LoreClient.require(
+            EventPump.call(arena) { callback ->
+                LoreFunctions.lore_branch_merge_restart.invokeExact(globals, options, callback) as Int
+            },
+            "restart merge",
+            notable = true,
+        )
+    }
 
     /**
      * @param reset discards local modifications so they match the incoming
