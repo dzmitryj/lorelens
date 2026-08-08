@@ -68,6 +68,9 @@
             <action id="LoreLens.Unresolve" class="com.dzmitryj.lorelens.merge.LoreUnresolveAction"/>
             <add-to-group group-id="ChangesViewPopupMenu" anchor="last"/>
         </group>
+        <action id="LoreLens.RestartMerge" class="com.dzmitryj.lorelens.merge.LoreRestartMergeAction">
+            <add-to-group group-id="Vcs.Operations.Popup.VcsAware" anchor="last"/>
+        </action>
         <action id="LoreLens.AbortMerge" class="com.dzmitryj.lorelens.merge.LoreAbortMergeAction">
             <add-to-group group-id="Vcs.Operations.Popup.VcsAware" anchor="last"/>
         </action>

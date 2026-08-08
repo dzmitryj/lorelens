@@ -88,6 +88,44 @@ abstract class LoreResolveAction(private val messageKey: String) : AnAction() {
             .filter { it.fileStatus == FileStatus.MERGE || it.fileStatus == FileStatus.MERGED_WITH_CONFLICTS }
 }
 
+/**
+ * Puts the conflict markers back. A resolve taken by mistake -- mine when it
+ * should have been theirs -- otherwise leaves nothing to act on short of
+ * aborting the whole merge and losing every other resolution.
+ */
+class LoreRestartMergeAction : AnAction() {
+
+    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible =
+            e.project?.let { LoreRootFinder.mappedRoots(it).isNotEmpty() } == true
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val roots = LoreRootFinder.mappedRoots(project)
+        if (roots.isEmpty()) return
+
+        val confirmed = Messages.showYesNoDialog(
+            project,
+            LoreLensBundle.message("merge.restart.message"),
+            LoreLensBundle.message("merge.restart.title"),
+            Messages.getWarningIcon(),
+        )
+        if (confirmed != Messages.YES) return
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            roots.forEach { root ->
+                runCatching { LoreBranchApi.restartMerge(root.toNioPath()) }
+                    .onFailure { log.warn("Cannot restart merge in ${root.path}", it) }
+            }
+            LoreRepositoryState.getInstance(project).invalidateAll()
+            VcsDirtyScopeManager.getInstance(project).markEverythingDirty()
+        }
+    }
+}
+
 /** Abandons the merge outright, so it asks first. */
 class LoreAbortMergeAction : AnAction() {
 
