@@ -175,6 +175,10 @@ object LoreMerger {
             private var failure: Throwable? = null
 
             override fun run(indicator: ProgressIndicator) {
+                com.dzmitryj.lorelens.merge.LoreConflictContext.begin(
+                    root,
+                    com.dzmitryj.lorelens.merge.LoreConflictContext.Kind.MERGE,
+                )
                 failure = runCatching {
                     LoreBranchApi.mergeInto(root, source, LoreLensBundle.message("merge.message", source))
                 }.exceptionOrNull()?.also { log.warn("Cannot merge $source into $root", it) }

@@ -12,6 +12,7 @@ import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionId
 import com.dzmitryj.lorelens.repo.LoreBranchSwitcher
 import com.dzmitryj.lorelens.repo.LoreMerger
+import com.dzmitryj.lorelens.repo.LoreReverter
 import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.dzmitryj.lorelens.update.LoreSyncSession
@@ -141,6 +142,7 @@ class LoreBranchGraphTab(private val project: Project) : ChangesViewContentProvi
         val group = DefaultActionGroup(
             ShowDiffForRevisionAction(entry),
             SyncToRevisionAction(entry),
+            RevertRevisionAction(entry),
             CopyHashAction(entry),
             CopyMessageAction(entry),
         )
@@ -263,6 +265,17 @@ class LoreBranchGraphTab(private val project: Project) : ChangesViewContentProvi
                     refresh(force = true)
                 }
             }.queue()
+        }
+    }
+
+    private inner class RevertRevisionAction(private val entry: LoreHistoryEntry) :
+        AnAction(LoreLensBundle.message("log.revert"), null, AllIcons.Actions.Rollback) {
+
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val path = root() ?: return
+            LoreReverter.revert(project, path, entry.revision.hex, entry.number)
         }
     }
 

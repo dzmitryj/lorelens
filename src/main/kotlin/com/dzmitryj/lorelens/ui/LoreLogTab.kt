@@ -17,6 +17,7 @@ import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionChain
 import com.dzmitryj.lorelens.repo.LoreBranchSwitcher
 import com.dzmitryj.lorelens.repo.LoreMerger
+import com.dzmitryj.lorelens.repo.LoreReverter
 import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.dzmitryj.lorelens.update.LoreSyncSession
@@ -166,6 +167,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             ShowFileHistoryAction(),
             Separator.getInstance(),
             SyncToRevisionAction(),
+            RevertRevisionAction(),
             CompareWithWorkingCopyAction(),
             TakeFromBranchAction(),
             Separator.getInstance(),
@@ -628,6 +630,23 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             LoreCrossBranch.compareWithWorkingCopy(
                 project, root, relative, entry.revision, entry.number, browsing?.name.orEmpty(),
             )
+        }
+    }
+
+    private inner class RevertRevisionAction : AnAction(
+        LoreLensBundle.message("log.revert"),
+        null,
+        com.intellij.icons.AllIcons.Actions.Rollback,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = table.selectedObject?.synced == true
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val row = table.selectedObject ?: return
+            LoreReverter.revert(project, row.root, row.entry.revision.hex, row.entry.number)
         }
     }
 

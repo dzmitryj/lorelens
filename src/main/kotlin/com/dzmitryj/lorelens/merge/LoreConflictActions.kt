@@ -2,6 +2,7 @@ package com.dzmitryj.lorelens.merge
 
 import com.dzmitryj.lorelens.LoreLensBundle
 import com.dzmitryj.lorelens.api.LoreBranchApi
+import com.dzmitryj.lorelens.api.LoreRevertApi
 import com.dzmitryj.lorelens.checkin.LorePaths
 import com.dzmitryj.lorelens.ffi.LoreResult
 import com.dzmitryj.lorelens.repo.LoreRepositoryState
@@ -28,19 +29,31 @@ private val log = logger<LoreResolveAction>()
 
 /** Marks the file resolved as it stands on disk. */
 class LoreMarkResolvedAction : LoreResolveAction("merge.resolved") {
-    override fun apply(root: Path, paths: List<String>) = LoreBranchApi.resolve(root, paths)
+    override fun apply(root: Path, paths: List<String>) = when (LoreConflictContext.kindOf(root)) {
+        LoreConflictContext.Kind.MERGE -> LoreBranchApi.resolve(root, paths)
+        LoreConflictContext.Kind.REVERT -> LoreRevertApi.resolve(root, paths)
+    }
 }
 
 class LoreResolveMineAction : LoreResolveAction("merge.mine") {
-    override fun apply(root: Path, paths: List<String>) = LoreBranchApi.resolveMine(root, paths)
+    override fun apply(root: Path, paths: List<String>) = when (LoreConflictContext.kindOf(root)) {
+        LoreConflictContext.Kind.MERGE -> LoreBranchApi.resolveMine(root, paths)
+        LoreConflictContext.Kind.REVERT -> LoreRevertApi.resolveMine(root, paths)
+    }
 }
 
 class LoreResolveTheirsAction : LoreResolveAction("merge.theirs") {
-    override fun apply(root: Path, paths: List<String>) = LoreBranchApi.resolveTheirs(root, paths)
+    override fun apply(root: Path, paths: List<String>) = when (LoreConflictContext.kindOf(root)) {
+        LoreConflictContext.Kind.MERGE -> LoreBranchApi.resolveTheirs(root, paths)
+        LoreConflictContext.Kind.REVERT -> LoreRevertApi.resolveTheirs(root, paths)
+    }
 }
 
 class LoreUnresolveAction : LoreResolveAction("merge.unresolve") {
-    override fun apply(root: Path, paths: List<String>) = LoreBranchApi.unresolve(root, paths)
+    override fun apply(root: Path, paths: List<String>) = when (LoreConflictContext.kindOf(root)) {
+        LoreConflictContext.Kind.MERGE -> LoreBranchApi.unresolve(root, paths)
+        LoreConflictContext.Kind.REVERT -> LoreRevertApi.unresolve(root, paths)
+    }
 }
 
 abstract class LoreResolveAction(private val messageKey: String) : AnAction() {
@@ -117,8 +130,13 @@ class LoreRestartMergeAction : AnAction() {
 
         ApplicationManager.getApplication().executeOnPooledThread {
             roots.forEach { root ->
-                runCatching { LoreBranchApi.restartMerge(root.toNioPath()) }
-                    .onFailure { log.warn("Cannot restart merge in ${root.path}", it) }
+                val path = root.toNioPath()
+                runCatching {
+                    when (LoreConflictContext.kindOf(path)) {
+                        LoreConflictContext.Kind.MERGE -> LoreBranchApi.restartMerge(path)
+                        LoreConflictContext.Kind.REVERT -> LoreRevertApi.restart(path)
+                    }
+                }.onFailure { log.warn("Cannot restart in ${root.path}", it) }
             }
             LoreRepositoryState.getInstance(project).invalidateAll()
             VcsDirtyScopeManager.getInstance(project).markEverythingDirty()
@@ -150,8 +168,14 @@ class LoreAbortMergeAction : AnAction() {
 
         ApplicationManager.getApplication().executeOnPooledThread {
             roots.forEach { root ->
-                runCatching { LoreBranchApi.abortMerge(root.toNioPath()) }
-                    .onFailure { log.warn("Cannot abort merge in ${root.path}", it) }
+                val path = root.toNioPath()
+                runCatching {
+                    when (LoreConflictContext.kindOf(path)) {
+                        LoreConflictContext.Kind.MERGE -> LoreBranchApi.abortMerge(path)
+                        LoreConflictContext.Kind.REVERT -> LoreRevertApi.abort(path)
+                    }
+                }.onFailure { log.warn("Cannot abort in ${root.path}", it) }
+                LoreConflictContext.end(path)
             }
             LoreRepositoryState.getInstance(project).invalidateAll()
             VcsDirtyScopeManager.getInstance(project).markEverythingDirty()
