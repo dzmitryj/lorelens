@@ -1,157 +1,127 @@
 package com.dzmitryj.lorelens.ui
 
 import com.dzmitryj.lorelens.LoreLensBundle
-import com.dzmitryj.lorelens.api.LoreHistoryEntry
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.ui.ScrollPaneFactory
-import com.intellij.ui.SimpleColoredComponent
-import com.intellij.ui.SimpleTextAttributes
+import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.panel
+import com.intellij.util.text.DateFormatUtil
+import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
 import java.awt.datatransfer.StringSelection
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
-import javax.swing.Box
-import javax.swing.BoxLayout
 import javax.swing.JPanel
 
 /**
  * What the row cannot hold: the full message, both identities, the whole hash
- * and the branches the revision sits on.
+ * and where the revision sits.
  *
- * Hand-rolled from SimpleColoredComponent because the platform's own commit
- * details panel is internal.
+ * Laid out with the UI DSL so labels and values line up on a grid, rather than
+ * as a stack of components each deciding its own alignment.
  */
 class LoreCommitDetailsPanel : JPanel(BorderLayout()) {
 
-    private val body = JPanel().apply {
-        layout = BoxLayout(this, BoxLayout.Y_AXIS)
-        border = JBUI.Borders.empty(8, 12)
-        isOpaque = false
-    }
-
-    private var hash: String = ""
+    private val host = JPanel(BorderLayout())
 
     init {
-        add(ScrollPaneFactory.createScrollPane(body, true), BorderLayout.CENTER)
+        add(ScrollPaneFactory.createScrollPane(host, true), BorderLayout.CENTER)
+        show(null, emptyList())
     }
 
     fun show(row: LogRow?, containingBranches: List<String>) {
-        body.removeAll()
-
-        if (row == null) {
-            body.add(
-                line { append(LoreLensBundle.message("details.none"), SimpleTextAttributes.GRAYED_ATTRIBUTES) },
-            )
-            revalidateBody()
-            return
-        }
-
-        val entry = row.entry
-        hash = entry.revision.hex
-
-        body.add(
-            line {
-                append(entry.subject.orEmpty(), SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
-                if (entry.isMerge) {
-                    append("   ${LoreLensBundle.message("log.merge")}", SimpleTextAttributes.GRAYED_BOLD_ATTRIBUTES)
-                }
-            },
-        )
-
-        entry.metadata.body?.lineSequence()?.filter { it.isNotBlank() }?.forEach { text ->
-            body.add(line { append(text, SimpleTextAttributes.REGULAR_ATTRIBUTES) })
-        }
-
-        body.add(Box.createVerticalStrut(JBUI.scale(8)))
-
-        body.add(
-            line {
-                append(
-                    LoreLensBundle.message("details.revision", entry.number),
-                    SimpleTextAttributes.REGULAR_ATTRIBUTES,
-                )
-                append("  ${entry.revision.hex}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-            }.also { component ->
-                // The full hash is the one thing here worth copying.
-                component.toolTipText = LoreLensBundle.message("details.copy.hash")
-                component.addMouseListener(object : MouseAdapter() {
-                    override fun mouseClicked(event: MouseEvent) =
-                        CopyPasteManager.getInstance().setContents(StringSelection(hash))
-                })
-            },
-        )
-
-        val author = entry.author.orEmpty()
-        val committer = entry.metadata.committer
-        body.add(
-            line {
-                append(LoreLensBundle.message("details.author", author), SimpleTextAttributes.REGULAR_ATTRIBUTES)
-                if (committer != null && committer != author) {
-                    append(
-                        "   ${LoreLensBundle.message("details.committer", committer)}",
-                        SimpleTextAttributes.GRAYED_ATTRIBUTES,
-                    )
-                }
-            },
-        )
-
-        entry.timestampMillis?.let { millis ->
-            body.add(
-                line {
-                    append(
-                        com.intellij.util.text.DateFormatUtil.formatDateTime(millis),
-                        SimpleTextAttributes.GRAYED_ATTRIBUTES,
-                    )
-                },
-            )
-        }
-
-        if (entry.parents.isNotEmpty()) {
-            body.add(
-                line {
-                    append(
-                        LoreLensBundle.message("details.parents", entry.parents.joinToString(", ") { it.short }),
-                        SimpleTextAttributes.GRAYED_ATTRIBUTES,
-                    )
-                },
-            )
-        }
-
-        if (containingBranches.isNotEmpty()) {
-            body.add(
-                line {
-                    append(
-                        LoreLensBundle.message("details.branches", containingBranches.joinToString(", ")),
-                        SimpleTextAttributes.GRAYED_ATTRIBUTES,
-                    )
-                },
-            )
-        }
-
-        if (!row.synced) {
-            body.add(
-                line {
-                    append(
-                        LoreLensBundle.message("details.not.synced"),
-                        SimpleTextAttributes.GRAYED_ITALIC_ATTRIBUTES,
-                    )
-                },
-            )
-        }
-
-        revalidateBody()
+        host.removeAll()
+        host.add(if (row == null) empty() else content(row, containingBranches), BorderLayout.NORTH)
+        host.revalidate()
+        host.repaint()
     }
 
-    private fun line(build: SimpleColoredComponent.() -> Unit): SimpleColoredComponent =
-        SimpleColoredComponent().apply {
-            isOpaque = false
-            alignmentX = LEFT_ALIGNMENT
-            build()
+    private fun empty(): JPanel = panel {
+        row {
+            label(LoreLensBundle.message("details.none"))
+                .applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
+    }.apply { border = JBUI.Borders.empty(12) }
 
-    private fun revalidateBody() {
-        body.revalidate()
-        body.repaint()
+    private fun content(row: LogRow, containingBranches: List<String>): JPanel {
+        val entry = row.entry
+        val author = entry.author.orEmpty()
+        val committer = entry.metadata.committer
+
+        return panel {
+            row {
+                label(entry.subject.orEmpty())
+                    .applyToComponent { font = JBFont.label().asBold().biggerOn(1f) }
+                    .align(AlignX.FILL)
+            }
+
+            entry.metadata.body?.takeIf { it.isNotBlank() }?.let { body ->
+                row {
+                    // A text area rather than a label: commit bodies wrap, and a
+                    // label would paint the whole thing as one clipped line.
+                    cell(
+                        JBTextArea(body.trim()).apply {
+                            isEditable = false
+                            isOpaque = false
+                            lineWrap = true
+                            wrapStyleWord = true
+                            border = JBUI.Borders.emptyTop(4)
+                            font = JBFont.label()
+                        },
+                    ).align(AlignX.FILL)
+                }
+            }
+
+            separator()
+
+            row(LoreLensBundle.message("details.field.revision")) {
+                label("${entry.number}")
+                link(entry.revision.short) {
+                    CopyPasteManager.getInstance().setContents(StringSelection(entry.revision.hex))
+                }.applyToComponent {
+                    toolTipText = LoreLensBundle.message("details.copy.hash")
+                }
+            }
+
+            row(LoreLensBundle.message("details.field.author")) {
+                label(author)
+                if (committer != null && committer != author) {
+                    comment(LoreLensBundle.message("details.committer", committer))
+                }
+            }
+
+            entry.timestampMillis?.let { millis ->
+                row(LoreLensBundle.message("details.field.date")) {
+                    label(DateFormatUtil.formatDateTime(millis))
+                }
+            }
+
+            if (entry.parents.isNotEmpty()) {
+                row(LoreLensBundle.message("details.field.parents")) {
+                    label(entry.parents.joinToString(", ") { it.short })
+                    if (entry.isMerge) {
+                        comment(LoreLensBundle.message("details.is.merge"))
+                    }
+                }
+            }
+
+            if (containingBranches.isNotEmpty()) {
+                row(LoreLensBundle.message("details.field.branch")) {
+                    label(containingBranches.joinToString(", "))
+                }
+            }
+
+            if (!row.synced) {
+                row {
+                    cell(
+                        JBLabel(LoreLensBundle.message("details.not.synced")).apply {
+                            foreground = UIUtil.getErrorForeground()
+                        },
+                    )
+                }
+            }
+        }.apply { border = JBUI.Borders.empty(12) }
     }
 }
