@@ -12,7 +12,6 @@ import com.dzmitryj.lorelens.changes.LoreRevisionNumber
 import com.dzmitryj.lorelens.lock.LoreLockService
 import com.dzmitryj.lorelens.model.LoreBranch
 import com.dzmitryj.lorelens.model.LoreBranchLocation
-import com.dzmitryj.lorelens.model.LoreBranchTree
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionChain
 import com.dzmitryj.lorelens.repo.LoreBranchSwitcher
@@ -68,9 +67,6 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private val log = logger<LoreLogTab>()
     private var graphRows: List<LoreHistoryLanes.Row> = emptyList()
-
-    /** Revision to branch, once the background attribution has answered. */
-    private var branchOf: Map<String, String> = emptyMap()
 
     /** The rows currently on screen, which the graph column paints against. */
     private var visible: List<LogRow> = emptyList()
@@ -255,7 +251,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
      * shown, and asking Lore per row would be a call per selection.
      */
     private fun containing(row: LogRow): List<String> =
-        listOfNotNull(browsing?.name ?: currentBranchName().ifEmpty { null })
+        listOfNotNull(browsing?.name ?: row.branch ?: currentBranchName().ifEmpty { null })
 
     /**
      * Naming the branches either side of a merge needs every branch's history,
@@ -270,17 +266,13 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         mergeKey = key
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val walked = runCatching { LoreBranchWalks.attribute(root, branches, HISTORY_LIMIT) }
-                .onFailure { log.warn("Cannot resolve branches for $root", it) }
-                .getOrNull()
+            val walked = walkAll(root, branches.filterNot { it.isArchived })
                 ?: return@executeOnPooledThread
 
             val labels = LoreBranchWalks.mergeLabels(walked.attributed)
-            val attributed = walked.attributed.associate { it.hash to it.branch }
 
             ApplicationManager.getApplication().invokeLater {
                 mergeLabels = labels
-                branchOf = attributed
                 all = all.map { it.copy(merged = labels[it.entry.revision.hex]) }
                 applyFilter(filter.filter ?: "")
             }
@@ -292,12 +284,61 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             ?.let { LoreRepositoryState.getInstance(project).cached(it.toNioPath())?.branchName }
             .orEmpty()
 
+    /** One walk of every branch per set of tips, shared with the merge labels. */
+    @Volatile
+    private var walkCache: Pair<String, LoreBranchWalks.Result>? = null
+
+    private fun walkAll(root: Path, branches: List<LoreBranch>): LoreBranchWalks.Result? {
+        val key = branches.joinToString(",") { "${it.name}@${it.latest.hex}" }
+        walkCache?.let { if (it.first == key) return it.second }
+        return runCatching { LoreBranchWalks.attribute(root, branches, HISTORY_LIMIT) }
+            .onFailure { log.warn("Cannot walk Lore branches for $root", it) }
+            .getOrNull()
+            ?.also { walkCache = key to it }
+    }
+
     private fun load(root: Path, branch: String): List<LogRow> {
         val branches = runCatching { LoreBranchApi.list(root) }
             .onFailure { log.warn("Cannot list Lore branches for $root", it) }
             .getOrDefault(emptyList())
 
         val state = LoreRepositoryState.getInstance(project).of(root)
+
+        // One chip per branch, at where the branch actually is. Keying on every
+        // entry put "dev-main" at both its local and its remote tip, which read
+        // as two branches with the same name.
+        val tips = branches
+            .filterNot { it.latest.isNone }
+            .groupBy { it.name }
+            .mapNotNull { (name, sides) ->
+                val at = sides.firstOrNull { it.location == LoreBranchLocation.REMOTE } ?: sides.first()
+                at.latest.hex to name
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, names) -> names.distinct() }
+
+        // The default view is every branch together. A single branch's walk
+        // follows first parents only, so the other side of each merge is
+        // missing and the graph cannot draw it; the union has both sides.
+        if (branch.isEmpty()) {
+            val walked = walkAll(root, branches.filterNot { it.isArchived })
+            if (walked != null) {
+                val labels = LoreBranchWalks.mergeLabels(walked.attributed)
+                return LoreLogOrder.topological(walked.attributed).mapNotNull { input ->
+                    val entry = walked.entries[input.hash] ?: return@mapNotNull null
+                    LogRow(
+                        root = root,
+                        entry = entry,
+                        synced = input.synced,
+                        tips = tips[input.hash].orEmpty(),
+                        merged = labels[input.hash],
+                        branch = input.branch,
+                    )
+                }
+            }
+            // Fall through to the single chain rather than showing nothing.
+        }
+
         val wanted = branch.ifEmpty { state?.branchName.orEmpty() }
         val remoteTip = branches
             .firstOrNull { it.name == wanted && it.location == LoreBranchLocation.REMOTE && !it.latest.isNone }
@@ -328,19 +369,6 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             ?.let { at -> runCatching { LoreHistoryApi.history(root, HISTORY_LIMIT, from = at) }.getOrNull() }
             ?.mapTo(HashSet()) { it.revision.hex }
 
-        // One chip per branch, at where the branch actually is. Keying on every
-        // entry put "dev-main" at both its local and its remote tip, which read
-        // as two branches with the same name.
-        val tips = branches
-            .filterNot { it.latest.isNone }
-            .groupBy { it.name }
-            .mapNotNull { (name, sides) ->
-                val at = sides.firstOrNull { it.location == LoreBranchLocation.REMOTE } ?: sides.first()
-                at.latest.hex to name
-            }
-            .groupBy({ it.first }, { it.second })
-            .mapValues { (_, names) -> names.distinct() }
-
         return history.map {
             LogRow(
                 root = root,
@@ -362,8 +390,10 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             branch = status.branchName,
             localRevision = status.revisionNumber,
             localHash = status.revision,
-            remoteRevision = rows.firstOrNull()?.entry?.number,
-            behind = rows.count { !it.synced },
+            // Rows from other branches do not count against this checkout: it is
+            // behind its own branch, not behind everyone's.
+            remoteRevision = rows.firstOrNull { it.branch == null || it.branch == status.branchName }?.entry?.number,
+            behind = rows.count { !it.synced && (it.branch == null || it.branch == status.branchName) },
             localAhead = status.localAhead,
             remoteAvailable = status.remoteAvailable,
             locksHeld = LoreLockService.getInstance(project).heldByMe(),

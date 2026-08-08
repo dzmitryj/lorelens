@@ -25,6 +25,8 @@ data class LogRow(
     val tips: List<String> = emptyList(),
     /** For a merge, the branch it pulled in and the branch it landed on. */
     val merged: Pair<String, String>? = null,
+    /** The branch this revision was made on, when the view spans branches. */
+    val branch: String? = null,
 )
 
 /**
