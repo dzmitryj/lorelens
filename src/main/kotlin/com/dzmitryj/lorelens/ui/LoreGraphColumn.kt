@@ -19,7 +19,7 @@ import javax.swing.table.TableCellRenderer
  * and a curve per lane, so a merge reads as two strands joining.
  */
 class LoreGraphColumn(
-    private val rows: () -> List<LoreGraphLayout.Row>,
+    private val rows: () -> List<LoreHistoryLanes.Row>,
     private val authorOf: (Int) -> String?,
     private val isMerge: (Int) -> Boolean,
 ) : ColumnInfo<LogRow, LogRow>("") {
@@ -33,7 +33,7 @@ class LoreGraphColumn(
      * each layout pass, and the lanes are capped anyway.
      */
     override fun getWidth(table: JTable): Int =
-        JBUI.scale(LANE * LoreGraphLayout.MAX_LANES + PAD)
+        JBUI.scale(LANE * LoreHistoryLanes.MAX_LANES + PAD)
 
     // One component, reconfigured per cell. A renderer that allocates is a
     // renderer that runs the garbage collector during scrolling.
@@ -47,7 +47,7 @@ class LoreGraphColumn(
 
     private class GraphCell : JComponent() {
 
-        private var row: LoreGraphLayout.Row? = null
+        private var row: LoreHistoryLanes.Row? = null
         private var author: String? = null
         private var merge: Boolean = false
 
@@ -56,7 +56,7 @@ class LoreGraphColumn(
         }
 
         fun configure(
-            row: LoreGraphLayout.Row?,
+            row: LoreHistoryLanes.Row?,
             author: String?,
             merge: Boolean,
             selected: Boolean,
@@ -81,31 +81,35 @@ class LoreGraphColumn(
             val lane = JBUI.scale(LANE)
             val middle = height / 2
 
-            // Only lines that touch this row: its own lane carrying through,
-            // and anything joining or leaving it. Drawing a through-line for
-            // every branch that happens to be open is what made this a barcode.
-            model.edges.forEach { edge ->
-                val joins = edge.fromLane == model.lane || edge.toLane == model.lane
-                if (!joins && edge.fromLane != edge.toLane) return@forEach
+            // Every lane with a line running through this row, so a branch
+            // reads as a continuous strand rather than appearing only where it
+            // was merged.
+            model.occupied.forEach { occupied ->
+                g2.color = laneColour(occupied)
+                val x = lane / 2 + occupied * lane
+                g2.drawLine(x, 0, x, height)
+            }
 
-                g2.color = laneColour(edge.fromLane)
-                val from = lane / 2 + edge.fromLane * lane
-                val to = lane / 2 + edge.toLane * lane
+            // Turns leaving this node for a parent on another lane: the branch
+            // point, drawn below the node because that is where it goes.
+            model.joins.forEach { join ->
+                g2.color = laneColour(join.toLane)
+                val from = lane / 2 + join.fromLane * lane
+                val to = lane / 2 + join.toLane * lane
 
-                if (from == to) {
-                    g2.drawLine(from, 0, to, height)
-                } else {
-                    // Right angles with a rounded corner, which reads as a track
-                    // rather than a wire and costs a fraction of a curve.
-                    val path = Path2D.Double()
-                    path.moveTo(from.toDouble(), 0.0)
-                    path.lineTo(from.toDouble(), (middle - CORNER).toDouble())
-                    path.quadTo(from.toDouble(), middle.toDouble(), (from + (to - from).coerceIn(-CORNER, CORNER)).toDouble(), middle.toDouble())
-                    path.lineTo((to - (to - from).coerceIn(-CORNER, CORNER)).toDouble(), middle.toDouble())
-                    path.quadTo(to.toDouble(), middle.toDouble(), to.toDouble(), (middle + CORNER).toDouble())
-                    path.lineTo(to.toDouble(), height.toDouble())
-                    g2.draw(path)
-                }
+                val path = Path2D.Double()
+                path.moveTo(from.toDouble(), middle.toDouble())
+                path.lineTo(from.toDouble(), (middle + CORNER).toDouble())
+                path.quadTo(
+                    from.toDouble(),
+                    (middle + CORNER * 2).toDouble(),
+                    (from + (to - from).coerceIn(-CORNER, CORNER)).toDouble(),
+                    (middle + CORNER * 2).toDouble(),
+                )
+                path.lineTo((to - (to - from).coerceIn(-CORNER, CORNER)).toDouble(), (middle + CORNER * 2).toDouble())
+                path.quadTo(to.toDouble(), (middle + CORNER * 2).toDouble(), to.toDouble(), (middle + CORNER * 3).toDouble())
+                path.lineTo(to.toDouble(), height.toDouble())
+                g2.draw(path)
             }
 
             val centre = lane / 2 + model.lane * lane

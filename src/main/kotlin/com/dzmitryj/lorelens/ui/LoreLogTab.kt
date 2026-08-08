@@ -12,6 +12,7 @@ import com.dzmitryj.lorelens.changes.LoreRevisionNumber
 import com.dzmitryj.lorelens.lock.LoreLockService
 import com.dzmitryj.lorelens.model.LoreBranch
 import com.dzmitryj.lorelens.model.LoreBranchLocation
+import com.dzmitryj.lorelens.model.LoreBranchTree
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionChain
 import com.dzmitryj.lorelens.repo.LoreBranchSwitcher
@@ -66,7 +67,10 @@ import javax.swing.ListSelectionModel
 class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private val log = logger<LoreLogTab>()
-    private var graphRows: List<LoreGraphLayout.Row> = emptyList()
+    private var graphRows: List<LoreHistoryLanes.Row> = emptyList()
+
+    /** Revision to branch, once the background attribution has answered. */
+    private var branchOf: Map<String, String> = emptyMap()
 
     /** The rows currently on screen, which the graph column paints against. */
     private var visible: List<LogRow> = emptyList()
@@ -258,22 +262,24 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
      * after the rows are already on screen, and cached against the tips.
      */
     private fun loadMergeLabels(root: Path?, branches: List<LoreBranch>) {
-        if (root == null || all.none { it.entry.isMerge }) return
+        if (root == null || all.isEmpty()) return
 
         val key = branches.joinToString(",") { "${it.name}@${it.latest.hex}" }
         if (key == mergeKey) return
         mergeKey = key
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val labels = runCatching {
-                LoreBranchWalks.mergeLabels(LoreBranchWalks.attribute(root, branches, HISTORY_LIMIT).attributed)
-            }
-                .onFailure { log.warn("Cannot resolve merge branches for $root", it) }
-                .getOrDefault(emptyMap())
-            if (labels.isEmpty()) return@executeOnPooledThread
+            val walked = runCatching { LoreBranchWalks.attribute(root, branches, HISTORY_LIMIT) }
+                .onFailure { log.warn("Cannot resolve branches for $root", it) }
+                .getOrNull()
+                ?: return@executeOnPooledThread
+
+            val labels = LoreBranchWalks.mergeLabels(walked.attributed)
+            val attributed = walked.attributed.associate { it.hash to it.branch }
 
             ApplicationManager.getApplication().invokeLater {
                 mergeLabels = labels
+                branchOf = attributed
                 all = all.map { it.copy(merged = labels[it.entry.revision.hex]) }
                 applyFilter(filter.filter ?: "")
             }
@@ -384,8 +390,15 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
      * at nothing.
      */
     private fun setRows(rows: List<LogRow>) {
-        graphRows = LoreGraphLayout.layout(
-            rows.map { it.entry.revision.hex to it.entry.parents.map { parent -> parent.hex } },
+        graphRows = LoreHistoryLanes.layout(
+            rows.map {
+                LoreHistoryLanes.Input(
+                    hash = it.entry.revision.hex,
+                    parents = it.entry.parents.map { parent -> parent.hex },
+                    branch = branchOf[it.entry.revision.hex],
+                )
+            },
+            order = LoreBranchTree.order(known),
         )
         visible = rows
         model.items = rows
