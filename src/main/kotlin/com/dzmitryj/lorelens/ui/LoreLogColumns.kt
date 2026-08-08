@@ -7,6 +7,7 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.speedSearch.SpeedSearchUtil
 import com.intellij.util.text.DateFormatUtil
+import java.awt.Color
 import com.intellij.util.ui.ColumnInfo
 import java.nio.file.Path
 import javax.swing.JTable
@@ -68,8 +69,9 @@ abstract class LoreLogColumn(name: String) : ColumnInfo<LogRow, LogRow>(name) {
         fun columns(
             graph: ColumnInfo<LogRow, *>,
             rows: () -> List<LogRow>,
+            laneOf: (LogRow) -> Int?,
         ): Array<ColumnInfo<LogRow, *>> =
-            arrayOf(graph, RefColumn(rows), RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn())
+            arrayOf(graph, RefColumn(rows, laneOf), RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn())
     }
 }
 
@@ -151,37 +153,47 @@ private class MessageColumn : LoreLogColumn(LoreLensBundle.message("log.column.m
 }
 
 /**
- * Branch labels in a column of their own rather than buried at the head of the
- * message, which is where the eye has to hunt for them.
+ * Which branch each row was made on, in the colour of the lane its line is
+ * drawn in, so the column and the graph read as one thing. A branch tip gets a
+ * chip; other rows get the name in small type.
  */
-private class RefColumn(private val rows: () -> List<LogRow>) :
-    LoreLogColumn(LoreLensBundle.message("log.column.refs")) {
+private class RefColumn(
+    private val rows: () -> List<LogRow>,
+    private val laneOf: (LogRow) -> Int?,
+) : LoreLogColumn(LoreLensBundle.message("log.column.refs")) {
 
-    // Sized to the chips actually on screen. A fixed worst case reserved a
+    // Sized to the labels actually on screen. A fixed worst case reserved a
     // column's width that stayed empty on every row but a branch tip, and
     // pushed the message -- the only column worth reading -- off the edge.
     override fun getMaxStringValue(): String =
-        rows().map { it.tips }
-            .maxByOrNull { tips -> tips.sumOf { it.length + 3 } }
-            ?.takeIf { it.isNotEmpty() }
-            ?.joinToString(" ") { " $it " }
-            ?: " "
+        rows()
+            .flatMap { row -> listOf(row.tips.joinToString(" ") { " $it " }, row.branch.orEmpty()) }
+            .maxByOrNull { it.length }
+            ?.ifEmpty { " " } ?: " "
 
     override fun getAdditionalWidth(): Int = PADDING
 
     override fun ColoredTableCellRenderer.render(row: LogRow) {
-        row.tips.forEach { name ->
-            append(" $name ", CHIP)
-            append(" ", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+        val colour = laneOf(row)?.let { LoreGraphColumn.laneColour(it) }
+
+        if (row.tips.isNotEmpty()) {
+            row.tips.forEach { name ->
+                append(" $name ", chip(colour))
+                append(" ", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+            }
+            return
+        }
+
+        row.branch?.let { name ->
+            append(name, SimpleTextAttributes(SimpleTextAttributes.STYLE_SMALLER, colour))
         }
     }
 
-    private companion object {
-        val CHIP = SimpleTextAttributes(
-            JBColor(0xD5E8D4, 0x39503B),
-            JBColor.foreground(),
+    private fun chip(colour: Color?): SimpleTextAttributes =
+        SimpleTextAttributes(
+            colour ?: JBColor(0xD5E8D4, 0x39503B),
+            JBColor(Color.WHITE, Color.WHITE),
             null,
             SimpleTextAttributes.STYLE_SMALLER,
         )
-    }
 }

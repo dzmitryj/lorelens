@@ -174,19 +174,22 @@ class LoreGraphColumn(
             )
         }
 
-        private fun laneColour(lane: Int): Color = LANE_COLOURS[lane % LANE_COLOURS.size]
+        private fun laneColour(lane: Int): Color = LoreGraphColumn.laneColour(lane)
 
         /** As round as the room between the lanes and the row edge allows. */
         private fun corner(start: Double, end: Double, room: Double): Double =
             minOf(JBUI.scale(5).toDouble(), Math.abs(end - start) / 2, room)
     }
 
-    private companion object {
-        const val LANE = 20
-        const val MARGIN = 8
-        const val NODE = 7
+    companion object {
+        /** Shared with the Branch column, so a label matches its lane's line. */
+        fun laneColour(lane: Int): Color = LANE_COLOURS[lane % LANE_COLOURS.size]
 
-        val LANE_COLOURS: List<Color> = listOf(
+        private const val LANE = 20
+        private const val MARGIN = 8
+        private const val NODE = 7
+
+        private val LANE_COLOURS: List<Color> = listOf(
             JBColor(0x4A88C7, 0x548AF7),
             JBColor(0x7A3E9D, 0xB07DD8),
             JBColor(0x00875A, 0x499C54),
