@@ -22,6 +22,12 @@ object LoreBranchGraphLayout {
         val isMerge: Boolean,
         /** False for a revision on the branch that this checkout does not have. */
         val synced: Boolean = true,
+        /**
+         * Ordering key. Revision numbers restart per branch -- two branches can
+         * both hold an r175 with different hashes -- so time is what puts the
+         * columns in order.
+         */
+        val timestamp: Long = 0,
     )
 
     data class Node(
@@ -47,45 +53,54 @@ object LoreBranchGraphLayout {
         fun nodeAt(hash: String): Node? = nodes.firstOrNull { it.hash == hash }
     }
 
-    /** One branch's walk, which includes the ancestry it was cut from. */
+    /**
+     * One branch's reachable history, and how deep the branch sits in the tree.
+     *
+     * Depth is what decides ownership: a child's walk contains everything its
+     * parent's does, so the deepest branch reaching a revision is the one it was
+     * made on.
+     */
     data class Walk(
         val branch: String,
-        val branchPoint: Long,
+        val depth: Int,
+        /** The branch this one was cut from, if it is in the listing. */
+        val parent: String?,
         val revisions: List<Input>,
     )
 
     /**
      * Decides which branch each revision belongs to.
      *
-     * History for a branch carries the ancestry it was cut from, so the same
-     * revision comes back in several walks and cannot simply be attributed to
-     * whichever walk produced it. A revision belongs to the most specific branch
-     * that contains it: of the branches whose walk holds it and whose branch
-     * point is older than it, the one cut most recently.
+     * A branch's history carries the ancestry it was cut from, so the same
+     * revision comes back in several walks. A branch owns a revision only when
+     * its parent does not also reach it -- otherwise the branch merely inherited
+     * it, and it was made further up.
+     *
+     * Reachability rather than revision numbers, because numbers restart per
+     * branch and comparing them across branches means nothing.
      */
     fun attribute(walks: List<Walk>): List<Input> {
+        val reach = walks.associate { walk -> walk.branch to walk.revisions.mapTo(HashSet()) { it.hash } }
         val claims = mutableMapOf<String, Pair<Walk, Input>>()
 
         walks.forEach { walk ->
             walk.revisions.forEach { revision ->
-                val existing = claims[revision.hash]
+                // Inherited, not made here.
+                if (reach[walk.parent]?.contains(revision.hash) == true) return@forEach
+
+                val existing = claims[revision.hash]?.first
                 val better = when {
                     existing == null -> true
-                    // Cut more recently, so more specific.
-                    walk.branchPoint > existing.first.branchPoint -> true
-                    walk.branchPoint < existing.first.branchPoint -> false
-                    else -> walk.branch < existing.first.branch
+                    walk.depth > existing.depth -> true
+                    walk.depth < existing.depth -> false
+                    else -> walk.branch < existing.branch
                 }
-                // A revision at or before a branch point predates that branch.
-                if (better && revision.number > walk.branchPoint) {
-                    claims[revision.hash] = walk to revision
-                }
+                if (better) claims[revision.hash] = walk to revision
             }
         }
 
-        // Anything only ever seen at or before every branch point still belongs
-        // somewhere: give it to the oldest branch that saw it.
-        walks.sortedBy { it.branchPoint }.forEach { walk ->
+        // A revision every candidate inherited still has to land somewhere.
+        walks.sortedBy { it.depth }.forEach { walk ->
             walk.revisions.forEach { revision ->
                 claims.getOrPut(revision.hash) { walk to revision }
             }
@@ -102,10 +117,13 @@ object LoreBranchGraphLayout {
     fun layout(revisions: List<Input>, order: List<String> = emptyList()): Graph {
         if (revisions.isEmpty()) return Graph(emptyList(), emptyList(), emptyList())
 
-        // Oldest first, so a column index is also chronological order.
-        val ordered = revisions.distinctBy { it.hash }.sortedBy { it.number }
+        // Oldest first by time. Revision numbers restart per branch, so sorting
+        // by number would interleave unrelated branches at random.
+        val ordered = revisions.distinctBy { it.hash }
+            .sortedWith(compareBy({ it.timestamp }, { it.number }, { it.hash }))
 
-        val earliest = ordered.groupBy { it.branch }.mapValues { (_, all) -> all.first().number }
+        val earliest = ordered.groupBy { it.branch }
+            .mapValues { (_, all) -> all.first().timestamp }
 
         // Hierarchy order -- main, then dev-main, then its children -- because
         // "which branch came from which" is what the lanes are for. Hoisting the

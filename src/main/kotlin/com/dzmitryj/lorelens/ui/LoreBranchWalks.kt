@@ -4,17 +4,22 @@ import com.dzmitryj.lorelens.api.LoreHistoryApi
 import com.dzmitryj.lorelens.api.LoreHistoryEntry
 import com.dzmitryj.lorelens.model.LoreBranch
 import com.dzmitryj.lorelens.model.LoreBranchLocation
+import com.dzmitryj.lorelens.model.LoreBranchTree
 import java.nio.file.Path
 
 /**
- * Which branch each revision belongs to.
+ * Which branch each revision belongs to, and which revisions this checkout has.
  *
- * Branch history carries the ancestry it was cut from, so a revision comes back
- * in several walks and has to be attributed rather than taken from whichever
- * walk produced it. Shared, because both the graph and the merge labels in
- * History need the same answer.
+ * Two things about Lore drive the shape of this, both established against a real
+ * repository rather than assumed:
  *
- * Costs one history call per branch, so callers do it off the EDT and cache it.
+ * - `lore_revision_history` returns nothing when given a branch *and* a
+ *   revision. Walking from a branch tip therefore passes the revision alone.
+ * - Revision numbers restart per branch: two branches can each hold an r175
+ *   with different hashes. Nothing here compares numbers across branches.
+ *
+ * Costs a couple of history calls per branch, so callers do it off the EDT and
+ * cache it.
  */
 object LoreBranchWalks {
 
@@ -26,37 +31,41 @@ object LoreBranchWalks {
 
     fun attribute(root: Path, branches: List<LoreBranch>, limit: Int): Result {
         val entries = mutableMapOf<String, LoreHistoryEntry>()
+        val tree = LoreBranchTree.build(branches)
+        val depths = mutableMapOf<String, Int>()
+        val parents = mutableMapOf<String, String?>()
+
+        fun descend(node: LoreBranchTree.Node, depth: Int, parent: String?) {
+            depths[node.name] = depth
+            parents[node.name] = parent
+            node.children.forEach { descend(it, depth + 1, node.name) }
+        }
+        tree.forEach { descend(it, 0, null) }
 
         val walks = branches.groupBy { it.name }.map { (name, sides) ->
             val local = sides.firstOrNull { it.location == LoreBranchLocation.LOCAL }
             val remote = sides.firstOrNull { it.location == LoreBranchLocation.REMOTE }
-            val branch = local ?: remote ?: sides.first()
 
-            // Walking from the remote tip is what reaches revisions this
-            // checkout has not synced; from the local tip they are invisible.
-            val from = remote?.latest?.takeIf { !it.isNone }?.hex.orEmpty()
-            val revisions = runCatching { LoreHistoryApi.history(root, limit, branch = name, from = from) }
-                .getOrDefault(emptyList())
+            // From the remote tip, so revisions this checkout has not synced are
+            // included. No branch argument: passing both returns nothing.
+            val reachable = walk(root, remote?.latest?.hex, limit)
+                .ifEmpty { walk(root, local?.latest?.hex, limit) }
                 .ifEmpty {
                     runCatching { LoreHistoryApi.history(root, limit, branch = name) }
                         .getOrDefault(emptyList())
                 }
-            revisions.forEach { entries.putIfAbsent(it.revision.hex, it) }
+            reachable.forEach { entries.putIfAbsent(it.revision.hex, it) }
 
-            // Everything past the local tip is on the branch but not here yet.
-            val syncedThrough = local?.latest
-                ?.let { tip -> revisions.firstOrNull { it.revision.hex == tip.hex }?.number }
-                ?: Long.MAX_VALUE
-
-            val branchPoint = branch.branchPoints
-                .mapNotNull { point -> revisions.firstOrNull { it.revision.hex == point.revision.hex }?.number }
-                .maxOrNull()
-                ?: 0L
+            // Membership rather than numbering: what the local tip reaches is
+            // what this checkout has.
+            val here = local?.latest?.hex
+                ?.let { tip -> walk(root, tip, limit).map { it.revision.hex }.toHashSet() }
 
             LoreBranchGraphLayout.Walk(
                 branch = name,
-                branchPoint = branchPoint,
-                revisions = revisions.map { entry ->
+                depth = depths[name] ?: 0,
+                parent = parents[name],
+                revisions = reachable.map { entry ->
                     LoreBranchGraphLayout.Input(
                         hash = entry.revision.hex,
                         number = entry.number,
@@ -64,13 +73,19 @@ object LoreBranchWalks {
                         parents = entry.parents.map { it.hex },
                         author = entry.author,
                         isMerge = entry.isMerge,
-                        synced = entry.number <= syncedThrough,
+                        synced = here == null || entry.revision.hex in here,
+                        timestamp = entry.timestampMillis ?: 0L,
                     )
                 },
             )
         }
 
         return Result(LoreBranchGraphLayout.attribute(walks), entries)
+    }
+
+    private fun walk(root: Path, from: String?, limit: Int): List<LoreHistoryEntry> {
+        if (from.isNullOrEmpty()) return emptyList()
+        return runCatching { LoreHistoryApi.history(root, limit, from = from) }.getOrDefault(emptyList())
     }
 
     /**

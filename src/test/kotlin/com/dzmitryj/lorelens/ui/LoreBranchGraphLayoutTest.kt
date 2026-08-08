@@ -91,8 +91,8 @@ class LoreBranchGraphLayoutTest {
 
     /**
      * Branch history carries the ancestry it was cut from, so the same revision
-     * arrives in several walks. It belongs to the branch cut most recently
-     * before it, not to whichever walk happened to produce it.
+     * arrives in several walks. It belongs to the deepest branch that reaches
+     * it, not to whichever walk happened to produce it.
      */
     @Test
     fun `a shared revision goes to the branch it was actually made on`() {
@@ -102,9 +102,9 @@ class LoreBranchGraphLayoutTest {
         val attributed = LoreBranchGraphLayout.attribute(
             listOf(
                 // main sees only its own revision.
-                LoreBranchGraphLayout.Walk("main", branchPoint = 0, revisions = listOf(shared)),
-                // lane was cut at r1 and sees both.
-                LoreBranchGraphLayout.Walk("lane", branchPoint = 1, revisions = listOf(shared, onLane)),
+                LoreBranchGraphLayout.Walk("main", depth = 0, parent = null, revisions = listOf(shared)),
+                // lane was cut from main, so it reaches both.
+                LoreBranchGraphLayout.Walk("lane", depth = 1, parent = "main", revisions = listOf(shared, onLane)),
             ),
         )
 
@@ -112,13 +112,13 @@ class LoreBranchGraphLayoutTest {
         assertEquals("lane", attributed.single { it.hash == "b" }.branch)
     }
 
-    /** Every revision must land somewhere, even one older than every branch. */
+    /** Every revision lands somewhere, even on a branch that reaches only it. */
     @Test
-    fun `a revision older than every branch point still gets a branch`() {
+    fun `a revision reached by one branch belongs to it`() {
         val ancient = revision("a", 1, "?", emptyList())
 
         val attributed = LoreBranchGraphLayout.attribute(
-            listOf(LoreBranchGraphLayout.Walk("lane", branchPoint = 5, revisions = listOf(ancient))),
+            listOf(LoreBranchGraphLayout.Walk("lane", depth = 1, parent = "main", revisions = listOf(ancient))),
         )
 
         assertEquals("lane", attributed.single().branch)
@@ -141,7 +141,7 @@ class LoreBranchGraphLayoutTest {
         )
 
         val attributed = LoreBranchGraphLayout.attribute(
-            listOf(LoreBranchGraphLayout.Walk("main", branchPoint = 0, revisions = listOf(here, ahead))),
+            listOf(LoreBranchGraphLayout.Walk("main", depth = 0, parent = null, revisions = listOf(here, ahead))),
         )
         val graph = LoreBranchGraphLayout.layout(attributed, order = listOf("main"))
 

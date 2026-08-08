@@ -302,8 +302,14 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             .firstOrNull { it.name == wanted && it.location == LoreBranchLocation.REMOTE && !it.latest.isNone }
             ?.latest
 
+        // Branch and revision together return nothing, so the tip walk passes
+        // the revision alone and the branch filter is only for the plain walk.
         val history = runCatching {
-            LoreHistoryApi.history(root, HISTORY_LIMIT, branch = branch, from = remoteTip?.hex.orEmpty())
+            if (remoteTip != null) {
+                LoreHistoryApi.history(root, HISTORY_LIMIT, from = remoteTip.hex)
+            } else {
+                LoreHistoryApi.history(root, HISTORY_LIMIT, branch = branch)
+            }
         }
             .onFailure { log.warn("Cannot read Lore history for $root", it) }
             .getOrDefault(emptyList())
@@ -315,9 +321,17 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             }
 
         val synced = state?.revisionNumber ?: Long.MAX_VALUE
+        // One chip per branch, at where the branch actually is. Keying on every
+        // entry put "dev-main" at both its local and its remote tip, which read
+        // as two branches with the same name.
         val tips = branches
             .filterNot { it.latest.isNone }
-            .groupBy({ it.latest.hex }, { it.name })
+            .groupBy { it.name }
+            .mapNotNull { (name, sides) ->
+                val at = sides.firstOrNull { it.location == LoreBranchLocation.REMOTE } ?: sides.first()
+                at.latest.hex to name
+            }
+            .groupBy({ it.first }, { it.second })
             .mapValues { (_, names) -> names.distinct() }
 
         return history.map {

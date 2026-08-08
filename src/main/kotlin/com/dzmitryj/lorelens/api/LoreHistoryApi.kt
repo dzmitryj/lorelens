@@ -45,6 +45,7 @@ object LoreHistoryApi {
         limit: Int = 50,
         branch: String = "",
         from: String = "",
+        onlyBranch: Boolean = true,
     ): List<LoreHistoryEntry> = Arena.ofConfined().use { arena ->
         val args = LoreArgs(arena)
         val globals = args.globals(root)
@@ -54,7 +55,7 @@ object LoreHistoryApi {
             args.writeString(lore_revision_history_args_t.branch(options), branch)
             // Otherwise the walk continues past the branch point into whatever
             // this branch was cut from, which is not "history for this branch".
-            lore_revision_history_args_t.only_branch(options, 1)
+            if (onlyBranch) lore_revision_history_args_t.only_branch(options, 1)
         }
         if (from.isNotEmpty()) {
             args.writeString(lore_revision_history_args_t.revision(options), from)
