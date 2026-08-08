@@ -67,8 +67,15 @@ object LoreClient {
         )
     }
 
+    /**
+     * Reports every call to the Lore console before deciding its fate, so the
+     * console shows the operations that ran and not only the ones that broke.
+     */
     fun require(result: LoreResult, what: String): LoreResult {
-        if (result.succeeded) return result
+        if (result.succeeded) {
+            LoreOperationLog.succeeded(what)
+            return result
+        }
 
         val code = result.statusOrNull()?.name ?: "code ${result.status ?: result.returnCode}"
         // Lore names the offending field in the error event, which is the only
@@ -79,9 +86,11 @@ object LoreClient {
             .distinct()
             .joinToString("; ")
 
-        throw LoreCallException(result, buildString {
+        val message = buildString {
             append("$what failed: $code")
             if (detail.isNotEmpty()) append(" -- $detail")
-        })
+        }
+        LoreOperationLog.failed(message)
+        throw LoreCallException(result, message)
     }
 }
