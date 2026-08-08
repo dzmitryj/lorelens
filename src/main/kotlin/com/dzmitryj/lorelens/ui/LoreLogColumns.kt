@@ -22,6 +22,8 @@ data class LogRow(
     val root: Path,
     val entry: LoreHistoryEntry,
     val synced: Boolean,
+    /** The revision this checkout is sitting on. */
+    val here: Boolean = false,
     /** Branches whose tip is this revision, rendered as chips on the row. */
     val tips: List<String> = emptyList(),
     /** For a merge, the branch it pulled in and the branch it landed on. */
@@ -81,18 +83,31 @@ private class RevisionColumn : LoreLogColumn(LoreLensBundle.message("log.column.
 
     // A max string caps the column; without one JTable splits the width evenly
     // and the message, which is the only column worth reading, gets a quarter.
-    override fun getMaxStringValue(): String = "999999  ${LoreLensBundle.message("log.not.synced")}"
+    override fun getMaxStringValue(): String = "999999  ${LoreLensBundle.message("log.you.are.here")}"
 
     override fun getAdditionalWidth(): Int = PADDING
 
     override fun ColoredTableCellRenderer.render(row: LogRow) {
-        append(row.entry.number.toString(), attributes(row))
-        if (!row.synced) {
+        append(
+            row.entry.number.toString(),
+            if (row.here) SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES else attributes(row),
+        )
+        if (row.here) {
+            append(
+                "  ${LoreLensBundle.message("log.you.are.here")}",
+                SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, HERE),
+            )
+        } else if (!row.synced) {
             append(
                 "  ${LoreLensBundle.message("log.not.synced")}",
                 SimpleTextAttributes.GRAYED_ITALIC_ATTRIBUTES,
             )
         }
+    }
+
+    private companion object {
+        /** The branch graph's convention: white marks where the checkout sits. */
+        val HERE = JBColor(0x2470B3, 0x548AF7)
     }
 }
 

@@ -22,6 +22,7 @@ class LoreGraphColumn(
     private val rows: () -> List<LoreHistoryLanes.Row>,
     private val authorOf: (Int) -> String?,
     private val isMerge: (Int) -> Boolean,
+    private val isHere: (Int) -> Boolean,
 ) : ColumnInfo<LogRow, LogRow>("") {
 
     override fun valueOf(item: LogRow): LogRow = item
@@ -51,7 +52,7 @@ class LoreGraphColumn(
 
     private val renderer = TableCellRenderer { table, _, selected, _, viewRow, _ ->
         val index = table.convertRowIndexToModel(viewRow)
-        cell.configure(rows().getOrNull(index), authorOf(index), isMerge(index), selected, table)
+        cell.configure(rows().getOrNull(index), authorOf(index), isMerge(index), isHere(index), selected, table)
         cell
     }
 
@@ -60,6 +61,7 @@ class LoreGraphColumn(
         private var row: LoreHistoryLanes.Row? = null
         private var author: String? = null
         private var merge: Boolean = false
+        private var here: Boolean = false
 
         init {
             isOpaque = true
@@ -69,12 +71,14 @@ class LoreGraphColumn(
             row: LoreHistoryLanes.Row?,
             author: String?,
             merge: Boolean,
+            here: Boolean,
             selected: Boolean,
             table: JTable,
         ) {
             this.row = row
             this.author = author
             this.merge = merge
+            this.here = here
             background = if (selected) table.selectionBackground else table.background
         }
 
@@ -161,6 +165,20 @@ class LoreGraphColumn(
             if (merge) {
                 g2.color = JBColor(Color.WHITE, Color.WHITE)
                 g2.drawOval(centre - radius, middle - radius, radius * 2, radius * 2)
+            }
+
+            // The branch graph's convention: a white ring marks the revision
+            // this checkout is sitting on.
+            if (here) {
+                g2.color = JBColor(Color.WHITE, Color.WHITE)
+                g2.stroke = BasicStroke(JBUI.scale(2).toFloat())
+                g2.drawOval(
+                    centre - radius - JBUI.scale(3),
+                    middle - radius - JBUI.scale(3),
+                    radius * 2 + JBUI.scale(6),
+                    radius * 2 + JBUI.scale(6),
+                )
+                g2.stroke = BasicStroke(JBUI.scale(3) / 2f)
             }
 
             g2.color = JBColor(Color.WHITE, Color.WHITE)
