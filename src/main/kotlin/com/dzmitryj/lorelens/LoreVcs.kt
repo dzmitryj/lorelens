@@ -63,6 +63,13 @@ class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
     /** `lore link` pins one repository inside another. */
     override fun allowsNestedRoots(): Boolean = true
 
+    /**
+     * Hides the platform's Shelf tab. Shelving is patch-based and sidesteps
+     * Lore's staged state; there is no Lore-native equivalent to put in its
+     * place, so the tab simply goes.
+     */
+    override fun isWithCustomShelves(): Boolean = true
+
     companion object {
         const val NAME = "LoreLens"
         val KEY: VcsKey = createKey(NAME)
