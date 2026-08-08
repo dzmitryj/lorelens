@@ -2,6 +2,7 @@ package com.dzmitryj.lorelens.dirty
 
 import com.dzmitryj.lorelens.LoreLensBundle
 import com.dzmitryj.lorelens.api.LoreStatusApi
+import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -51,6 +52,7 @@ class LoreFullRescanAction : AnAction() {
                                 log.warn("Full rescan failed for ${root.path}", e)
                             }
                         }
+                        LoreRepositoryState.getInstance(project).invalidateAll()
                         VcsDirtyScopeManager.getInstance(project).markEverythingDirty()
                     }
                 },

@@ -1,6 +1,7 @@
 package com.dzmitryj.lorelens.dirty
 
 import com.dzmitryj.lorelens.api.LoreStatusApi
+import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.dzmitryj.lorelens.repo.loreInstanceId
 import com.intellij.openapi.diagnostic.logger
@@ -51,6 +52,7 @@ class LoreStartupRescan : ProjectActivity {
                             log.warn("Initial scan failed for $path", e)
                         }
                     }
+                    LoreRepositoryState.getInstance(project).invalidateAll()
                     VcsDirtyScopeManager.getInstance(project).markEverythingDirty()
                 }
             },
