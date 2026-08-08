@@ -320,7 +320,13 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                     .getOrDefault(emptyList())
             }
 
-        val synced = state?.revisionNumber ?: Long.MAX_VALUE
+        // Membership, not numbering: what the checkout's own revision reaches is
+        // what it has. Numbers restart per branch, so comparing them against
+        // rows walked in from an ancestor branch marks the wrong ones unsynced.
+        val here = state?.revision?.hex
+            ?.let { at -> runCatching { LoreHistoryApi.history(root, HISTORY_LIMIT, from = at) }.getOrNull() }
+            ?.mapTo(HashSet()) { it.revision.hex }
+
         // One chip per branch, at where the branch actually is. Keying on every
         // entry put "dev-main" at both its local and its remote tip, which read
         // as two branches with the same name.
@@ -338,7 +344,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             LogRow(
                 root = root,
                 entry = it,
-                synced = it.number <= synced,
+                synced = here == null || it.revision.hex in here,
                 tips = tips[it.revision.hex].orEmpty(),
                 merged = mergeLabels[it.revision.hex],
             )
