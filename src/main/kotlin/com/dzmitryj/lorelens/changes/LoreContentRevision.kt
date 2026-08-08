@@ -9,6 +9,7 @@ import com.intellij.openapi.vcs.changes.ByteBackedContentRevision
 import com.intellij.util.containers.ContainerUtil
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicLong
 
 data class LoreRevisionNumber(val id: LoreRevisionId, val number: Long) : VcsRevisionNumber {
 
@@ -58,14 +59,12 @@ class LoreContentRevision(
      * with a name inside it, never a temp file.
      */
     private fun fetch(): ByteArray {
-        val directory = Files.createTempDirectory("lore-content")
-        val temp = directory.resolve("content")
+        val temp = scratch.resolve("content-${counter.incrementAndGet()}")
         return try {
             LoreStatusApi.writeFile(root, relativePath, revision.id.hex, temp)
             Files.readAllBytes(temp)
         } finally {
             Files.deleteIfExists(temp)
-            Files.deleteIfExists(directory)
         }
     }
 
@@ -73,5 +72,9 @@ class LoreContentRevision(
 
     private companion object {
         val cache: MutableMap<Key, ByteArray> = ContainerUtil.createConcurrentSoftValueMap()
+
+        /** One directory for the session; a fetch only needs a name inside it. */
+        val scratch: Path by lazy { Files.createTempDirectory("lorelens-content") }
+        val counter = AtomicLong()
     }
 }
