@@ -10,6 +10,14 @@ plugins {
 
 kotlin {
     jvmToolchain(25)
+
+    compilerOptions {
+        // Without this, implementing a platform Kotlin interface emits a
+        // delegating override in our class for every default method it has.
+        // Those count as our usages, so a handful of deprecated and
+        // experimental platform methods get attributed to code we never wrote.
+        freeCompilerArgs.add("-jvm-default=no-compatibility")
+    }
 }
 
 dependencies {

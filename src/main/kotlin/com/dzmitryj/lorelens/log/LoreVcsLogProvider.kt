@@ -75,6 +75,13 @@ class LoreVcsLogProvider(private val project: Project) : VcsLogProvider {
     override fun getCurrentUser(root: VirtualFile): VcsUser? =
         LoreLockApi.currentUserId(root.toNioPath())?.let { factory.createUser(it, it) }
 
+    /**
+     * Deprecated in favour of the suspend readRecentCommits, which takes an
+     * experimental RefsLoadingPolicy. Trading a deprecation for an experimental
+     * type is not an improvement for a plugin pinned to 261-262, so this stays
+     * until the replacement settles.
+     */
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun readFirstBlock(
         root: VirtualFile,
         requirements: VcsLogProvider.Requirements,
@@ -83,9 +90,12 @@ class LoreVcsLogProvider(private val project: Project) : VcsLogProvider {
         return DetailedLogData(walk.map { metadata(root, it) }, refs(root))
     }
 
-    override fun readAllHashes(root: VirtualFile, consumer: Consumer<in TimedVcsCommit>): VcsLogProvider.LogData {
+    override fun readAllHashes(
+        root: VirtualFile,
+        commitConsumer: Consumer<in TimedVcsCommit>,
+    ): VcsLogProvider.LogData {
         val walk = walk(root, UNLIMITED)
-        walk.forEach { consumer.consume(factory.createTimedCommit(hash(it.entry), parents(it), it.entry.timestampMillis ?: 0L)) }
+        walk.forEach { commitConsumer.consume(factory.createTimedCommit(hash(it.entry), parents(it), it.entry.timestampMillis ?: 0L)) }
 
         val users = walk.mapNotNull { it.entry.author }.distinct().map { factory.createUser(it, it) }.toSet()
         return LogData(refs(root), users)
@@ -105,12 +115,12 @@ class LoreVcsLogProvider(private val project: Project) : VcsLogProvider {
     override fun readFullDetails(
         root: VirtualFile,
         hashes: List<String>,
-        consumer: Consumer<in VcsFullCommitDetails>,
+        commitConsumer: Consumer<in VcsFullCommitDetails>,
     ) {
         val wanted = hashes.toHashSet()
         walk(root, UNLIMITED)
             .filter { it.entry.revision.hex in wanted }
-            .forEach { consumer.consume(FullDetails(root, it)) }
+            .forEach { commitConsumer.consume(FullDetails(root, it)) }
     }
 
     override fun getContainingBranches(root: VirtualFile, commitHash: Hash): Collection<String> =
@@ -257,10 +267,17 @@ class LoreVcsLogProvider(private val project: Project) : VcsLogProvider {
         }
     }
 
+    /**
+     * Implements refsIterable rather than refs: the platform's default for refs
+     * throws NotImplementedError with the message "Consider implementing
+     * refsIterable", which is as clear a direction as it gets.
+     */
     private class DetailedLogData(
         override val commits: List<VcsCommitMetadata>,
-        override val refs: Set<VcsRef>,
-    ) : VcsLogProvider.DetailedLogData
+        private val references: Set<VcsRef>,
+    ) : VcsLogProvider.DetailedLogData {
+        override val refsIterable: Iterable<VcsRef> get() = references
+    }
 
     private class LogData(
         override val refs: Set<VcsRef>,
