@@ -32,11 +32,30 @@ object LoreHistoryApi {
      * metadata arriving as separate events in between. Entries are therefore
      * assembled by attributing each metadata event to the entry it follows.
      */
-    fun history(root: Path, limit: Int = 50): List<LoreHistoryEntry> = Arena.ofConfined().use { arena ->
+    /**
+     * @param branch restricts to one branch; empty is the current one.
+     * @param from starts at this revision rather than the head, which is what
+     *   makes paging possible.
+     */
+    fun history(
+        root: Path,
+        limit: Int = 50,
+        branch: String = "",
+        from: String = "",
+    ): List<LoreHistoryEntry> = Arena.ofConfined().use { arena ->
         val args = LoreArgs(arena)
         val globals = args.globals(root)
         val options = arena.allocate(lore_revision_history_args_t.LAYOUT)
         lore_revision_history_args_t.length(options, limit)
+        if (branch.isNotEmpty()) {
+            args.writeString(lore_revision_history_args_t.branch(options), branch)
+            // Otherwise the walk continues past the branch point into whatever
+            // this branch was cut from, which is not "history for this branch".
+            lore_revision_history_args_t.only_branch(options, 1)
+        }
+        if (from.isNotEmpty()) {
+            args.writeString(lore_revision_history_args_t.revision(options), from)
+        }
 
         val result = LoreClient.require(
             EventPump.call(arena) { callback ->

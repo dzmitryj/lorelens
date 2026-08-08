@@ -1,5 +1,6 @@
 package com.dzmitryj.lorelens
 
+import com.dzmitryj.lorelens.api.LoreBranchApi
 import com.dzmitryj.lorelens.api.LoreClient
 import com.dzmitryj.lorelens.api.LoreDiffApi
 import com.dzmitryj.lorelens.api.LoreHistoryApi
@@ -439,6 +440,52 @@ class LoreRepositoryIntegrationTest {
         val changed = LoreDiffApi.revisionDiff(repository, parent.hex, child.hex).map { it.path }
 
         assertEquals(listOf("x.txt"), changed)
+    }
+
+    @Test
+    fun `branches are listed with the current one marked`() {
+        repository.resolve("b.txt").writeText("branching")
+        LoreWriteApi.stage(repository, listOf("b.txt"))
+        LoreWriteApi.commit(repository, "add b")
+
+        val branches = LoreBranchApi.list(repository)
+        val current = branches.singleOrNull { it.isCurrent }
+
+        assertTrue("no branch reported as current in $branches", current != null)
+        assertEquals(
+            LoreStatusApi.status(repository, scan = true).revision!!.branchName,
+            current!!.name,
+        )
+    }
+
+    /** The filter has to name a branch Lore knows, or it silently returns nothing. */
+    @Test
+    fun `history filtered to the current branch matches unfiltered history`() {
+        repository.resolve("c.txt").writeText("filtered")
+        LoreWriteApi.stage(repository, listOf("c.txt"))
+        LoreWriteApi.commit(repository, "add c")
+
+        val branch = LoreStatusApi.status(repository, scan = true).revision!!.branchName
+        val unfiltered = LoreHistoryApi.history(repository).map { it.revision.hex }
+        val filtered = LoreHistoryApi.history(repository, branch = branch).map { it.revision.hex }
+
+        assertTrue("unfiltered history was empty", unfiltered.isNotEmpty())
+        assertEquals(unfiltered, filtered)
+    }
+
+    /** Revision-only status skips the staged set, so it must still carry the revision. */
+    @Test
+    fun `revision status reports the head without the staged set`() {
+        repository.resolve("r.txt").writeText("head")
+        LoreWriteApi.stage(repository, listOf("r.txt"))
+        LoreWriteApi.commit(repository, "add r")
+
+        val full = LoreStatusApi.status(repository, scan = true).revision!!
+        val lean = LoreStatusApi.revisionStatus(repository)!!
+
+        assertEquals(full.revision.hex, lean.revision.hex)
+        assertEquals(full.branchName, lean.branchName)
+        assertTrue(LoreStatusApi.status(repository, staged = false).files.isEmpty())
     }
 
     @Test

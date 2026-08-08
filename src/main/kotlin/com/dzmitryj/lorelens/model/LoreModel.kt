@@ -105,3 +105,26 @@ data class LoreHistoryRecord(
     val author: String? get() = metadata.author
     val timestampMillis: Long? get() = metadata.timestampMillis
 }
+
+enum class LoreBranchLocation {
+    LOCAL,
+    REMOTE,
+    ;
+
+    companion object {
+        fun of(value: Int): LoreBranchLocation = if (value == 1) REMOTE else LOCAL
+    }
+}
+
+data class LoreBranch(
+    val name: String,
+    val category: String,
+    val location: LoreBranchLocation,
+    val latest: LoreRevisionId,
+    val creator: String,
+    val createdMillis: Long,
+    val isCurrent: Boolean,
+    val isArchived: Boolean,
+    /** Revisions this branch was created from, nearest first. */
+    val branchPoints: List<LoreRevisionId>,
+)
