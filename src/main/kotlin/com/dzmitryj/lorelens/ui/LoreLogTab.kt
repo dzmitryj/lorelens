@@ -416,10 +416,8 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 LoreHistoryLanes.Input(
                     hash = it.entry.revision.hex,
                     parents = it.entry.parents.map { parent -> parent.hex },
-                    branch = branchOf[it.entry.revision.hex],
                 )
             },
-            order = LoreBranchTree.order(known),
         )
         visible = rows
         model.items = rows

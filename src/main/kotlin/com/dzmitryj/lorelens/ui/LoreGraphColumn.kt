@@ -91,36 +91,36 @@ class LoreGraphColumn(
             val lane = JBUI.scale(LANE)
             val middle = height / 2
 
-            // Every lane with a line running through this row, so a branch
-            // reads as a continuous strand rather than appearing only where it
-            // was merged.
-            model.occupied.forEach { occupied ->
-                g2.color = laneColour(occupied)
-                val x = lane / 2 + occupied * lane
-                g2.drawLine(x, 0, x, height)
+            fun x(at: Int) = (lane / 2 + at * lane).toDouble()
+
+            // A strand crossing the row untouched. Drawn edge to edge, so it
+            // meets the same lane in the rows above and below.
+            model.through.forEach { crossing ->
+                g2.color = laneColour(crossing)
+                g2.drawLine(x(crossing).toInt(), 0, x(crossing).toInt(), height)
             }
 
-            // Turns leaving this node for a parent on another lane: the branch
-            // point, drawn below the node because that is where it goes.
-            model.joins.forEach { join ->
-                g2.color = laneColour(join.toLane)
-                val from = lane / 2 + join.fromLane * lane
-                val to = lane / 2 + join.toLane * lane
+            // Half a cell at a time: the top edge down to the node, then the
+            // node down to the bottom edge. Both halves land on the boundary,
+            // which is what keeps the line whole from row to row.
+            fun strand(segment: LoreHistoryLanes.Segment, from: Double, to: Double) {
+                g2.color = laneColour(segment.colour)
+                val start = x(segment.from)
+                val end = x(segment.to)
+                if (start == end) {
+                    g2.drawLine(start.toInt(), from.toInt(), start.toInt(), to.toInt())
+                    return
+                }
 
+                val bend = from + (to - from) / 2
                 val path = Path2D.Double()
-                path.moveTo(from.toDouble(), middle.toDouble())
-                path.lineTo(from.toDouble(), (middle + CORNER).toDouble())
-                path.quadTo(
-                    from.toDouble(),
-                    (middle + CORNER * 2).toDouble(),
-                    (from + (to - from).coerceIn(-CORNER, CORNER)).toDouble(),
-                    (middle + CORNER * 2).toDouble(),
-                )
-                path.lineTo((to - (to - from).coerceIn(-CORNER, CORNER)).toDouble(), (middle + CORNER * 2).toDouble())
-                path.quadTo(to.toDouble(), (middle + CORNER * 2).toDouble(), to.toDouble(), (middle + CORNER * 3).toDouble())
-                path.lineTo(to.toDouble(), height.toDouble())
+                path.moveTo(start, from)
+                path.curveTo(start, bend, end, bend, end, to)
                 g2.draw(path)
             }
+
+            model.incoming.forEach { strand(it, 0.0, middle.toDouble()) }
+            model.outgoing.forEach { strand(it, middle.toDouble(), height.toDouble()) }
 
             val centre = lane / 2 + model.lane * lane
             val radius = JBUI.scale(NODE)
@@ -151,7 +151,6 @@ class LoreGraphColumn(
         const val LANE = 20
         const val PAD = 10
         const val NODE = 7
-        val CORNER = JBUI.scale(5)
 
         val LANE_COLOURS: List<Color> = listOf(
             JBColor(0x4A88C7, 0x548AF7),

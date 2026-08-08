@@ -6,82 +6,86 @@ import org.junit.Test
 
 class LoreHistoryLanesTest {
 
-    private fun row(hash: String, branch: String?, vararg parents: String) =
-        LoreHistoryLanes.Input(hash, parents.toList(), branch)
-
-    private val order = listOf("main", "dev-main", "dev-alberto")
+    private fun row(hash: String, vararg parents: String) =
+        LoreHistoryLanes.Input(hash, parents.toList())
 
     /**
-     * The complaint that prompted this: a branch showed as a stub at its merge
-     * and nowhere else, because lanes came from parent chains rather than
-     * branches.
+     * The complaint that prompted this rewrite: the line arrived in pieces. Every
+     * row a strand crosses has to carry it, or the gap shows.
      */
     @Test
-    fun `a branch runs as a line for as long as it has revisions`() {
+    fun `a strand lands on both row boundaries all the way down`() {
         val rows = LoreHistoryLanes.layout(
             listOf(
-                row("d3", "dev-main", "d2"),
-                row("a2", "dev-alberto", "a1"),
-                row("d2", "dev-main", "d1"),
-                row("a1", "dev-alberto", "d1"),
-                row("d1", "dev-main"),
+                row("m2", "m1", "side"),
+                row("m1", "m0"),
+                row("side", "m0"),
+                row("m0"),
             ),
-            order,
         )
 
-        // dev-alberto holds lane 2 across every row between its two revisions.
-        assertTrue(
-            "expected dev-alberto's lane to run through the rows between it",
-            rows.subList(1, 4).all { 2 in it.occupied },
-        )
-        assertEquals(listOf(1, 2, 1, 2, 1), rows.map { it.lane })
+        // Everything between the merge and `side` has to carry side's lane,
+        // otherwise the curve starts from nothing.
+        val sideLane = rows[0].outgoing.map { it.to }.single { it != rows[0].lane }
+        assertTrue("expected side's lane to cross the row between", sideLane in rows[1].through)
+        assertEquals(sideLane, rows[2].lane)
+
+        // Each half meets the other: what leaves a row's bottom edge enters the
+        // next row's top edge on the same lane.
+        rows.zipWithNext().forEach { (upper, lower) ->
+            val leaving = (upper.outgoing.map { it.to } + upper.through).toSet()
+            val arriving = (lower.incoming.map { it.from } + lower.through).toSet()
+            assertEquals(leaving, arriving)
+        }
     }
 
-    /** A branch point turns from the child's lane into the parent's. */
+    /** One strand is one line, straight through. */
     @Test
-    fun `a parent on another lane produces a join`() {
-        val rows = LoreHistoryLanes.layout(
-            listOf(
-                row("a1", "dev-alberto", "d1"),
-                row("d1", "dev-main"),
-            ),
-            order,
-        )
-
-        val join = rows.first().joins.single()
-        assertEquals(2, join.fromLane)
-        assertEquals(1, join.toLane)
-    }
-
-    /** One branch is one line, with nothing crossing it. */
-    @Test
-    fun `a single branch stays in its lane`() {
-        val rows = LoreHistoryLanes.layout(
-            listOf(row("b", "main", "a"), row("a", "main")),
-            order,
-        )
+    fun `a linear history stays in one lane`() {
+        val rows = LoreHistoryLanes.layout(listOf(row("b", "a"), row("a")))
 
         assertEquals(listOf(0, 0), rows.map { it.lane })
-        assertTrue("nothing to join", rows.all { it.joins.isEmpty() })
         assertEquals(listOf(1, 1), rows.map { it.width })
+        assertTrue("nothing crosses a single strand", rows.all { it.through.isEmpty() })
+        // The first row's parent continues below it; the last has nowhere to go.
+        assertEquals(listOf(0 to 0), rows[0].outgoing.map { it.from to it.to })
+        assertTrue(rows[1].outgoing.isEmpty())
     }
 
-    /** Before attribution arrives every row is unattributed; it still lays out. */
+    /** A merge converges the lane it pulled in, which then closes. */
     @Test
-    fun `unattributed rows share one lane`() {
+    fun `a merge opens a lane and the merged revision closes it`() {
         val rows = LoreHistoryLanes.layout(
-            listOf(row("b", null, "a"), row("a", null)),
-            order,
+            listOf(row("m", "a", "b"), row("b", "a"), row("a")),
         )
 
-        assertEquals(listOf(0, 0), rows.map { it.lane })
+        assertEquals(2, rows[0].outgoing.size)
+        assertEquals(setOf(0, 1), rows[0].outgoing.mapTo(mutableSetOf()) { it.to })
+        // b sits on the lane the merge opened and carries it straight down; the
+        // turn back into lane 0 happens at the shared parent, not before it.
+        assertEquals(1, rows[1].lane)
+        assertEquals(listOf(1 to 1), rows[1].incoming.map { it.from to it.to })
+        assertEquals(listOf(1 to 1), rows[1].outgoing.map { it.from to it.to })
+        assertEquals(listOf(0 to 0, 1 to 0), rows[2].incoming.map { it.from to it.to })
+        assertTrue("the lane is free again", rows[2].through.isEmpty())
+    }
+
+    /** A parent outside the window would hold a lane open for a line that never comes. */
+    @Test
+    fun `a parent off the end of the window closes its lane`() {
+        val rows = LoreHistoryLanes.layout(listOf(row("b", "a")))
+
+        assertTrue(rows.single().outgoing.isEmpty())
+        assertEquals(1, rows.single().width)
     }
 
     @Test
     fun `lanes never exceed the cap`() {
-        val many = (1..10).map { row("h$it", "branch$it") }
-        val rows = LoreHistoryLanes.layout(many, (1..10).map { "branch$it" }, maxLanes = 3)
+        // A chain of merges, each pulling in a side that never lands.
+        val many = (1..10).map { row("m$it", "m${it + 1}", "s$it") } +
+            (1..10).map { row("s$it") } + row("m11")
+        val rows = LoreHistoryLanes.layout(many, maxLanes = 3)
 
-        assertTrue("expected at most 3 lanes", rows.all { it.width <= 3 && it.lane < 3 })
+        assertTrue("expected at most 3 lanes", rows.all { it.width <= 3 })
     }
 }
