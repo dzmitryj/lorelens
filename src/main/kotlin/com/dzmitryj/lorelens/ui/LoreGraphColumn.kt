@@ -28,12 +28,22 @@ class LoreGraphColumn(
 
     override fun getRenderer(item: LogRow?): TableCellRenderer = renderer
 
+    private var measured: List<LoreHistoryLanes.Row>? = null
+    private var lanes = 1
+
     /**
-     * Fixed rather than measured. Scanning every row to find the widest ran on
-     * each layout pass, and the lanes are capped anyway.
+     * As wide as the lanes in use, not as wide as the cap. Reserving the cap
+     * left most of the column empty and squeezed out everything to its right.
+     * Measured once per layout: the supplier hands back a new list each time.
      */
-    override fun getWidth(table: JTable): Int =
-        JBUI.scale(LANE * LoreHistoryLanes.MAX_LANES + PAD)
+    override fun getWidth(table: JTable): Int {
+        val laid = rows()
+        if (laid !== measured) {
+            measured = laid
+            lanes = (laid.maxOfOrNull { it.width } ?: 1).coerceIn(1, LoreHistoryLanes.MAX_LANES)
+        }
+        return JBUI.scale(LANE * lanes + PAD)
+    }
 
     // One component, reconfigured per cell. A renderer that allocates is a
     // renderer that runs the garbage collector during scrolling.

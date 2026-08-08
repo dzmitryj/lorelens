@@ -63,8 +63,11 @@ abstract class LoreLogColumn(name: String) : ColumnInfo<LogRow, LogRow>(name) {
         /** Room for the sort arrow and cell insets, which the string width misses. */
         const val PADDING = 24
 
-        fun columns(graph: ColumnInfo<LogRow, *>): Array<ColumnInfo<LogRow, *>> =
-            arrayOf(RefColumn(), graph, RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn())
+        fun columns(
+            graph: ColumnInfo<LogRow, *>,
+            rows: () -> List<LogRow>,
+        ): Array<ColumnInfo<LogRow, *>> =
+            arrayOf(graph, RefColumn(rows), RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn())
     }
 }
 
@@ -149,9 +152,18 @@ private class MessageColumn : LoreLogColumn(LoreLensBundle.message("log.column.m
  * Branch labels in a column of their own rather than buried at the head of the
  * message, which is where the eye has to hunt for them.
  */
-private class RefColumn : LoreLogColumn(LoreLensBundle.message("log.column.refs")) {
+private class RefColumn(private val rows: () -> List<LogRow>) :
+    LoreLogColumn(LoreLensBundle.message("log.column.refs")) {
 
-    override fun getMaxStringValue(): String = " dev-dicenzo  dev-alberto "
+    // Sized to the chips actually on screen. A fixed worst case reserved a
+    // column's width that stayed empty on every row but a branch tip, and
+    // pushed the message -- the only column worth reading -- off the edge.
+    override fun getMaxStringValue(): String =
+        rows().map { it.tips }
+            .maxByOrNull { tips -> tips.sumOf { it.length + 3 } }
+            ?.takeIf { it.isNotEmpty() }
+            ?.joinToString(" ") { " $it " }
+            ?: " "
 
     override fun getAdditionalWidth(): Int = PADDING
 

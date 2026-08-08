@@ -82,6 +82,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 authorOf = { index -> visible.getOrNull(index)?.entry?.author },
                 isMerge = { index -> visible.getOrNull(index)?.entry?.isMerge == true },
             ),
+            rows = { visible },
         ),
         emptyList<LogRow>(),
     )
@@ -422,6 +423,9 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         )
         visible = rows
         model.items = rows
+        // Lane count and chip widths both come from the rows, so the columns
+        // have to be sized again once those rows are in.
+        table.updateColumnSizes()
     }
 
     /**
