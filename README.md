@@ -21,15 +21,23 @@ do that as well.
 - **Automatic dirty marking** as you edit, with an explicit Full Rescan when you want reconciliation
 - **Commit, revert, and push**, with push-after-commit on by default — in a centralized VCS an unpushed commit
   is a half-finished action
-- **Rename tracking**, using Lore's first-class move support rather than reporting an add plus a delete
+- **History**: the current branch's ancestry as a commit graph — one lane and one colour per branch, merge
+  direction readable from the picture, unsynced revisions marked, and a *you are here* ring on the checkout
+- **Branch Graph**: the repository as swimlanes, pannable and zoomable, with switch and merge — either
+  direction — a right-click away
+- **Complete merge and revert workflows**: merge into the current branch or land the current branch on another,
+  resolve conflicts as mine/theirs, re-materialize a botched resolve, revert any revision with the same
+  conflict machinery
+- **Rename tracking**, using Lore's first-class move support rather than reporting an add plus a delete —
+  and historical content is read by content address, so diffs and blame stay correct across moves
 - **File locking**: editing a read-only file acquires its lock, files held by others are read-only with a banner
   naming the holder, and the status bar shows branch, revision, and locks held
 - **Clone and sync**, including a client-side view filter at clone time
 - **`.loreignore`** with syntax highlighting, comment toggling and the platform's ignore inspections
-- **LoreLens tab**: revisions with author, date and message, and the changed files of whichever revision you select
 - **File history** in the IDE's own Show History, following renames exactly — Lore records moves rather than
   inferring them
 - **Blame on the caret line**, GitLens style: author, relative date and subject as an end-of-line hint
+- **A Lore console** recording every operation, with optional native debug logging to a rolling file
 
 ## Requirements
 
@@ -72,6 +80,11 @@ that range before releasing:
 ```bash
 ./gradlew verifyPlugin -PverifyAgainstIde="C:\Users\you\AppData\Local\Programs\Rider"
 ```
+
+### Versioning
+
+The plugin version is `<lore version>.<plugin revision>` — `0.8.6.1` bundles liblore v0.8.6. The last part is
+this plugin's own counter (`pluginRevision` in `gradle.properties`) and resets when the Lore version moves.
 
 ### Publishing
 
