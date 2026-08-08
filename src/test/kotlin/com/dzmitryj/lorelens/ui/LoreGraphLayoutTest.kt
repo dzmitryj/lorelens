@@ -62,6 +62,24 @@ class LoreGraphLayoutTest {
         assertEquals(2, rows[2].width)
     }
 
+    /**
+     * A branch left open for hundreds of revisions used to open a lane each
+     * time and draw a line per lane per row, which is what turned the column
+     * into a barcode and cost real paint time.
+     */
+    @Test
+    fun `lanes never exceed the cap`() {
+        // Ten heads all waiting on one ancestor: without a cap this is ten lanes.
+        val heads = (1..10).map { "h$it" to listOf("base") }
+        val rows = LoreGraphLayout.layout(heads + ("base" to emptyList()), maxLanes = 3)
+
+        assertTrue(
+            "expected at most 3 lanes, got ${rows.map { it.width }}",
+            rows.all { it.width <= 3 },
+        )
+        assertTrue("every row still gets a lane", rows.all { it.lane < 3 })
+    }
+
     @Test
     fun `an empty history lays out to nothing`() {
         assertEquals(emptyList<LoreGraphLayout.Row>(), LoreGraphLayout.layout(emptyList()))

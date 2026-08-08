@@ -12,6 +12,7 @@ import com.dzmitryj.lorelens.changes.LoreRevisionNumber
 import com.dzmitryj.lorelens.lock.LoreLockService
 import com.dzmitryj.lorelens.model.LoreBranch
 import com.dzmitryj.lorelens.model.LoreBranchLocation
+import com.dzmitryj.lorelens.model.LoreBranchTree
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionChain
 import com.dzmitryj.lorelens.repo.LoreBranchSwitcher
@@ -291,7 +292,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 // Where this branch was cut. Every revision at or before it
                 // belongs to whatever it was cut from, not to this branch.
                 val branchPoint = branch.branchPoints
-                    .mapNotNull { point -> revisions.firstOrNull { it.revision.hex == point.hex }?.number }
+                    .mapNotNull { point -> revisions.firstOrNull { it.revision.hex == point.revision.hex }?.number }
                     .maxOrNull()
                     ?: 0L
 
@@ -311,7 +312,11 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 )
             }
 
-            val graph = LoreBranchGraphLayout.layout(LoreBranchGraphLayout.attribute(walks), current)
+            val graph = LoreBranchGraphLayout.layout(
+                LoreBranchGraphLayout.attribute(walks),
+                first = current,
+                order = LoreBranchTree.order(known),
+            )
             ApplicationManager.getApplication().invokeLater { branchGraph.show(graph, current) }
         }
     }

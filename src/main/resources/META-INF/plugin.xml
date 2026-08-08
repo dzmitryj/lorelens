@@ -36,6 +36,9 @@
         <changesViewContent id="LoreLensHistory" tabName="History"
                             className="com.dzmitryj.lorelens.ui.LoreLogTab"
                             predicateClassName="com.dzmitryj.lorelens.ui.LoreLogTabVisibility"/>
+        <changesViewContent id="LoreLensBranches" tabName="Branch Graph"
+                            className="com.dzmitryj.lorelens.ui.LoreBranchTreeTab"
+                            predicateClassName="com.dzmitryj.lorelens.ui.LoreBranchTreeTabVisibility"/>
         <changesViewContent id="LoreLensConsole" tabName="Console"
                             className="com.dzmitryj.lorelens.ui.LoreConsoleTab"
                             predicateClassName="com.dzmitryj.lorelens.ui.LoreConsoleTabVisibility"/>

@@ -171,11 +171,20 @@ class LoreBranchGraphPanel(
                 val toX = xOf(link.to).toDouble()
                 val toY = yOf(link.to).toDouble()
 
-                // Curved rather than a dogleg: the bend is what makes a fork
-                // read as leaving a lane instead of as a stray line.
+                // Right angles with a rounded corner: the line runs along the
+                // lane it is leaving, turns once, and runs into the lane it is
+                // joining. Reads as a track rather than a wire.
+                val corner = JBUI.scale(6).toDouble()
+                val turn = (toX - corner).coerceAtLeast(fromX)
+                val down = if (toY > fromY) corner else -corner
+
                 val path = Path2D.Double()
                 path.moveTo(fromX, fromY)
-                path.curveTo(fromX + (toX - fromX) / 2, fromY, fromX + (toX - fromX) / 2, toY, toX, toY)
+                path.lineTo(turn - corner, fromY)
+                path.quadTo(turn, fromY, turn, fromY + down)
+                path.lineTo(turn, toY - down)
+                path.quadTo(turn, toY, turn + corner, toY)
+                path.lineTo(toX, toY)
                 g2.draw(path)
             }
         }

@@ -28,27 +28,43 @@ class LoreGraphColumn(
 
     override fun getRenderer(item: LogRow?): TableCellRenderer = renderer
 
-    /** Sized to the widest row so the lanes never clip. */
-    override fun getWidth(table: JTable): Int {
-        val lanes = rows().maxOfOrNull { it.width } ?: 1
-        return JBUI.scale(LANE * lanes.coerceIn(1, MAX_LANES) + PAD)
-    }
+    /**
+     * Fixed rather than measured. Scanning every row to find the widest ran on
+     * each layout pass, and the lanes are capped anyway.
+     */
+    override fun getWidth(table: JTable): Int =
+        JBUI.scale(LANE * LoreGraphLayout.MAX_LANES + PAD)
+
+    // One component, reconfigured per cell. A renderer that allocates is a
+    // renderer that runs the garbage collector during scrolling.
+    private val cell = GraphCell()
 
     private val renderer = TableCellRenderer { table, _, selected, _, viewRow, _ ->
         val index = table.convertRowIndexToModel(viewRow)
-        GraphCell(rows().getOrNull(index), authorOf(index), isMerge(index), selected, table)
+        cell.configure(rows().getOrNull(index), authorOf(index), isMerge(index), selected, table)
+        cell
     }
 
-    private class GraphCell(
-        private val row: LoreGraphLayout.Row?,
-        private val author: String?,
-        private val merge: Boolean,
-        selected: Boolean,
-        table: JTable,
-    ) : JComponent() {
+    private class GraphCell : JComponent() {
+
+        private var row: LoreGraphLayout.Row? = null
+        private var author: String? = null
+        private var merge: Boolean = false
 
         init {
             isOpaque = true
+        }
+
+        fun configure(
+            row: LoreGraphLayout.Row?,
+            author: String?,
+            merge: Boolean,
+            selected: Boolean,
+            table: JTable,
+        ) {
+            this.row = row
+            this.author = author
+            this.merge = merge
             background = if (selected) table.selectionBackground else table.background
         }
 
@@ -65,20 +81,29 @@ class LoreGraphColumn(
             val lane = JBUI.scale(LANE)
             val middle = height / 2
 
-            // Edges first so a node always sits on top of its own lines.
+            // Only lines that touch this row: its own lane carrying through,
+            // and anything joining or leaving it. Drawing a through-line for
+            // every branch that happens to be open is what made this a barcode.
             model.edges.forEach { edge ->
+                val joins = edge.fromLane == model.lane || edge.toLane == model.lane
+                if (!joins && edge.fromLane != edge.toLane) return@forEach
+
                 g2.color = laneColour(edge.fromLane)
-                val from = (lane / 2 + edge.fromLane * lane).toDouble()
-                val to = (lane / 2 + edge.toLane * lane).toDouble()
+                val from = lane / 2 + edge.fromLane * lane
+                val to = lane / 2 + edge.toLane * lane
 
                 if (from == to) {
-                    g2.drawLine(from.toInt(), 0, to.toInt(), height)
+                    g2.drawLine(from, 0, to, height)
                 } else {
-                    // A curve rather than a dogleg: the bend is what makes a
-                    // fork read as leaving its lane.
+                    // Right angles with a rounded corner, which reads as a track
+                    // rather than a wire and costs a fraction of a curve.
                     val path = Path2D.Double()
-                    path.moveTo(from, 0.0)
-                    path.curveTo(from, middle.toDouble(), to, middle.toDouble(), to, height.toDouble())
+                    path.moveTo(from.toDouble(), 0.0)
+                    path.lineTo(from.toDouble(), (middle - CORNER).toDouble())
+                    path.quadTo(from.toDouble(), middle.toDouble(), (from + (to - from).coerceIn(-CORNER, CORNER)).toDouble(), middle.toDouble())
+                    path.lineTo((to - (to - from).coerceIn(-CORNER, CORNER)).toDouble(), middle.toDouble())
+                    path.quadTo(to.toDouble(), middle.toDouble(), to.toDouble(), (middle + CORNER).toDouble())
+                    path.lineTo(to.toDouble(), height.toDouble())
                     g2.draw(path)
                 }
             }
@@ -112,9 +137,7 @@ class LoreGraphColumn(
         const val LANE = 20
         const val PAD = 10
         const val NODE = 7
-
-        /** Beyond this the column would crowd out the message. */
-        const val MAX_LANES = 8
+        val CORNER = JBUI.scale(5)
 
         val LANE_COLOURS: List<Color> = listOf(
             JBColor(0x4A88C7, 0x548AF7),

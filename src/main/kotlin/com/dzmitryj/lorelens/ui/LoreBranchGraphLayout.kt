@@ -96,15 +96,25 @@ object LoreBranchGraphLayout {
      *   the branch that owns it.
      * @param first the branch to put on the top lane, normally the checkout's.
      */
-    fun layout(revisions: List<Input>, first: String = ""): Graph {
+    fun layout(revisions: List<Input>, first: String = "", order: List<String> = emptyList()): Graph {
         if (revisions.isEmpty()) return Graph(emptyList(), emptyList(), emptyList())
 
         // Oldest first, so a column index is also chronological order.
         val ordered = revisions.distinctBy { it.hash }.sortedBy { it.number }
 
         val earliest = ordered.groupBy { it.branch }.mapValues { (_, all) -> all.first().number }
+
+        // Hierarchy order when it is known -- main, then dev-main, then its
+        // children -- because "which branch came from which" is what the lanes
+        // are trying to show. Age is only a fallback.
+        val rank = order.withIndex().associate { (index, name) -> name to index }
         val lanes = earliest.keys.sortedWith(
-            compareBy({ if (it == first) 0 else 1 }, { earliest.getValue(it) }, { it }),
+            compareBy(
+                { if (it == first) 0 else 1 },
+                { rank[it] ?: Int.MAX_VALUE },
+                { earliest.getValue(it) },
+                { it },
+            ),
         )
         val laneOf = lanes.withIndex().associate { (index, name) -> name to index }
 

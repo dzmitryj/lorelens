@@ -13,6 +13,9 @@ package com.dzmitryj.lorelens.ui
  */
 object LoreGraphLayout {
 
+    /** Beyond this the column stops being readable, so lanes fold together. */
+    const val MAX_LANES = 4
+
     /**
      * @param lane the column this revision's node sits in.
      * @param edges lanes carried through this row, each with the lane it is
@@ -31,7 +34,7 @@ object LoreGraphLayout {
     /**
      * @param revisions newest first, each with the hashes of its parents.
      */
-    fun layout(revisions: List<Pair<String, List<String>>>): List<Row> {
+    fun layout(revisions: List<Pair<String, List<String>>>, maxLanes: Int = MAX_LANES): List<Row> {
         // Lane N is waiting for this hash; null once nothing is heading there.
         val awaiting = mutableListOf<String?>()
         val rows = mutableListOf<Row>()
@@ -39,8 +42,12 @@ object LoreGraphLayout {
         revisions.forEach { (hash, parents) ->
             var lane = awaiting.indexOf(hash)
             if (lane < 0) {
-                lane = awaiting.indexOfFirst { it == null }.takeIf { it >= 0 }
-                    ?: awaiting.size.also { awaiting += null }
+                lane = awaiting.indexOfFirst { it == null }
+                    .takeIf { it >= 0 }
+                    // Past the cap everything folds into the last lane. A branch
+                    // left open for hundreds of revisions would otherwise turn
+                    // the column into a barcode and cost a line per row to draw.
+                    ?: if (awaiting.size < maxLanes) awaiting.size.also { awaiting += null } else maxLanes - 1
                 awaiting[lane] = hash
             }
 
