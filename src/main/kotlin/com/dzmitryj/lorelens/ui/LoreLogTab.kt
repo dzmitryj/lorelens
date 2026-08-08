@@ -7,9 +7,12 @@ import com.dzmitryj.lorelens.api.LoreHistoryApi
 import com.dzmitryj.lorelens.api.LoreHistoryEntry
 import com.dzmitryj.lorelens.changes.LoreContentRevision
 import com.dzmitryj.lorelens.changes.LoreRevisionNumber
+import com.dzmitryj.lorelens.model.LoreBranchLocation
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionChain
+import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
+import com.dzmitryj.lorelens.update.LoreSyncSession
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -18,11 +21,15 @@ import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vcs.FileStatus
 import com.intellij.openapi.vcs.LocalFilePath
 import com.intellij.openapi.vcs.changes.Change
+import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager
 import com.intellij.openapi.vcs.changes.ui.ChangesBrowserBase
 import com.intellij.openapi.vcs.changes.ui.ChangesViewContentProvider
 import com.intellij.openapi.vcs.vfs.ContentRevisionVirtualFile
@@ -32,14 +39,19 @@ import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.PopupHandler
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.TableSpeedSearch
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBLoadingPanel
 import com.intellij.ui.content.Content
 import com.intellij.ui.table.TableView
+import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.ListTableModel
+import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
+import java.awt.FlowLayout
 import java.awt.event.MouseEvent
 import java.nio.file.Path
 import javax.swing.DefaultComboBoxModel
+import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.ListSelectionModel
 
@@ -65,6 +77,13 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     // After `all`, which its filter callback reads.
     private val filter = LogFilter()
     private val branches = ComboBox(DefaultComboBoxModel(arrayOf(CURRENT_BRANCH)))
+
+    /** Where this checkout sits, in the tab rather than only in the status bar. */
+    private val summary = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
+    private val syncToLatest = JButton(LoreLensBundle.message("log.sync.latest")).apply {
+        isVisible = false
+        addActionListener { sync(revision = "") }
+    }
 
     override fun initTabContent(content: Content) {
         table.apply {
@@ -92,6 +111,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             RefreshAction(),
             CompareRevisionsAction(),
             OpenAtRevisionAction(),
+            SyncToRevisionAction(),
         )
         PopupHandler.installRowSelectionTablePopup(table, actions, "LoreLensLog")
         object : DoubleClickListener() {
@@ -121,6 +141,13 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                         BorderLayout.WEST,
                     )
                     add(
+                        JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0)).apply {
+                            add(summary)
+                            add(syncToLatest)
+                        },
+                        BorderLayout.CENTER,
+                    )
+                    add(
                         JPanel(BorderLayout()).apply {
                             add(branches, BorderLayout.WEST)
                             add(filter, BorderLayout.EAST)
@@ -142,12 +169,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
         ApplicationManager.getApplication().executeOnPooledThread {
             val roots = LoreRootFinder.mappedRoots(project).map { it.toNioPath() }
-            val entries = roots.flatMap { root ->
-                runCatching { LoreHistoryApi.history(root, HISTORY_LIMIT, branch = selected) }
-                    .onFailure { log.warn("Cannot read Lore history for $root", it) }
-                    .getOrDefault(emptyList())
-                    .map { root to it }
-            }
+            val entries = roots.flatMap { root -> load(root, selected) }
             val names = roots.firstOrNull()?.let { root ->
                 runCatching { LoreBranchApi.list(root).filterNot { it.isArchived } }
                     .onFailure { log.warn("Cannot list Lore branches for $root", it) }
@@ -156,14 +178,58 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                     .distinct()
                     .sorted()
             }.orEmpty()
+            val behind = entries.count { !it.synced }
 
             ApplicationManager.getApplication().invokeLater {
                 all = entries
                 showBranches(names)
                 applyFilter(filter.filter ?: "")
+                table.updateColumnSizes()
+                showSummary(behind)
                 loading.stopLoading()
             }
         }
+    }
+
+    /**
+     * Walks from the remote branch tip rather than the local one, so revisions
+     * that exist on the branch but have not been synced here still appear.
+     * Everything at or below the checkout's own revision number is synced;
+     * Lore's chain is linear, so the number is enough to tell them apart.
+     */
+    private fun load(root: Path, branch: String): List<LogRow> {
+        val branches = runCatching { LoreBranchApi.list(root) }
+            .onFailure { log.warn("Cannot list Lore branches for $root", it) }
+            .getOrDefault(emptyList())
+
+        val state = LoreRepositoryState.getInstance(project).of(root)
+        val wanted = branch.ifEmpty { state?.branchName.orEmpty() }
+        val remoteTip = branches
+            .firstOrNull { it.name == wanted && it.location == LoreBranchLocation.REMOTE && !it.latest.isNone }
+            ?.latest
+
+        val history = runCatching {
+            LoreHistoryApi.history(root, HISTORY_LIMIT, branch = branch, from = remoteTip?.hex.orEmpty())
+        }
+            .onFailure { log.warn("Cannot read Lore history for $root", it) }
+            .getOrDefault(emptyList())
+            .ifEmpty {
+                // A remote tip this checkout cannot walk is not fatal; fall back
+                // to what it does have rather than showing nothing.
+                runCatching { LoreHistoryApi.history(root, HISTORY_LIMIT, branch = branch) }
+                    .getOrDefault(emptyList())
+            }
+
+        val synced = state?.revisionNumber ?: Long.MAX_VALUE
+        return history.map { LogRow(root, it, it.number <= synced) }
+    }
+
+    private fun showSummary(behind: Int) {
+        summary.text = when {
+            behind > 0 -> LoreLensBundle.message("log.behind", behind)
+            else -> LoreLensBundle.message("log.up.to.date")
+        }
+        syncToLatest.isVisible = behind > 0
     }
 
     /** Rebuilt in place, so reselecting must not fire another refresh. */
@@ -223,12 +289,12 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 val row = table.convertRowIndexToModel(table.selectedRow)
                 val entry = model.items.getOrNull(row) ?: return null
                 val parent = LoreRevisionChain.parentOf(model.items, row)?.entry
-                entry.first to (parent to entry.entry)
+                entry.root to (parent to entry.entry)
             }
 
             2 -> {
                 val (newer, older) = selected.sortedByDescending { it.entry.number }
-                newer.first to (older.entry to newer.entry)
+                newer.root to (older.entry to newer.entry)
             }
 
             else -> null
@@ -255,6 +321,55 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                     else -> Change(before, after, FileStatus.MODIFIED)
                 }
             }
+    }
+
+    /**
+     * Syncs, then refreshes. Empty revision means the branch tip; anything else
+     * moves the checkout to that revision, which Lore treats as a normal sync
+     * rather than a detached state.
+     */
+    private fun sync(revision: String) {
+        val root = LoreRootFinder.mappedRoots(project).firstOrNull()?.toNioPath() ?: return
+
+        object : Task.Backgroundable(project, LoreLensBundle.message("update.progress", root), true) {
+            private var failure: Throwable? = null
+
+            override fun run(indicator: ProgressIndicator) {
+                failure = runCatching { LoreSyncSession.sync(root, revision) }.exceptionOrNull()
+                    ?.also { log.warn("Cannot sync $root", it) }
+            }
+
+            override fun onFinished() {
+                LoreRepositoryState.getInstance(project).invalidateAll()
+                VcsDirtyScopeManager.getInstance(project).markEverythingDirty()
+                failure?.let {
+                    Messages.showErrorDialog(
+                        project,
+                        it.message ?: LoreLensBundle.message("log.sync.failed"),
+                        LoreLensBundle.message("log.sync.failed"),
+                    )
+                }
+                refresh()
+            }
+        }.queue()
+    }
+
+    /** Enabled for a single revision this checkout does not have. */
+    private inner class SyncToRevisionAction : AnAction(
+        LoreLensBundle.message("log.sync.revision"),
+        null,
+        com.intellij.icons.AllIcons.Actions.Download,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = table.selectedObjects.size == 1
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val row = table.selectedObjects.singleOrNull() ?: return
+            sync(row.entry.revision.hex)
+        }
     }
 
     private inner class LogFilter : FilterComponent("LoreLens.Log.Filter", 10) {
