@@ -9,9 +9,11 @@ import com.dzmitryj.lorelens.api.LoreWriteApi
 import com.dzmitryj.lorelens.changes.LoreContentRevision
 import com.dzmitryj.lorelens.changes.LoreRevisionNumber
 import com.dzmitryj.lorelens.lock.LoreLockService
+import com.dzmitryj.lorelens.model.LoreBranch
 import com.dzmitryj.lorelens.model.LoreBranchLocation
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionChain
+import com.dzmitryj.lorelens.repo.LoreBranchSwitcher
 import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.dzmitryj.lorelens.update.LoreSyncSession
@@ -75,10 +77,33 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     private val filter = LogFilter()
     private val branches = ComboBox(DefaultComboBoxModel(arrayOf(CURRENT_BRANCH)))
 
+    /** Non-null while looking at a branch this checkout is not on. */
+    private var browsing: LoreBranch? = null
+
+    private var known: List<LoreBranch> = emptyList()
+
+    private val details = LoreCommitDetailsPanel()
+
     /** Where this checkout sits, in the tab rather than only in the status bar. */
     private val repository = LoreRepositoryPanel(
         onSyncToLatest = { sync(revision = "") },
         onPush = ::push,
+        onBrowse = { branch ->
+            browsing = branch
+            this.branch = branch.name
+            refresh()
+        },
+        onSwitch = { branch ->
+            LoreRootFinder.mappedRoots(project).firstOrNull()?.let { root ->
+                LoreBranchSwitcher.switch(project, root.toNioPath(), branch.name)
+            }
+        },
+        onReturnToCurrent = {
+            browsing = null
+            branch = ""
+            refresh()
+        },
+        branches = { known },
     )
 
     override fun initTabContent(content: Content) {
@@ -95,6 +120,9 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             val chosen = if (selected == CURRENT_BRANCH) "" else selected
             if (chosen == branch) return@addActionListener
             branch = chosen
+            // The combo and the header are one state, so picking here counts as
+            // browsing unless it lands back on the branch the checkout is on.
+            browsing = known.firstOrNull { it.name == chosen && chosen != currentBranchName() }
             refresh()
         }
 
@@ -108,6 +136,8 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             CompareRevisionsAction(),
             OpenAtRevisionAction(),
             SyncToRevisionAction(),
+            CompareWithWorkingCopyAction(),
+            TakeFromBranchAction(),
         )
         PopupHandler.installRowSelectionTablePopup(table, actions, "LoreLensLog")
         object : DoubleClickListener() {
@@ -117,9 +147,14 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             }
         }.installOn(table)
 
+        val lower = OnePixelSplitter(false, "LoreLens.Log.Details", 0.65f).apply {
+            firstComponent = changes
+            secondComponent = details
+        }
+
         val splitter = OnePixelSplitter(true, "LoreLens.Log.Proportion", 0.6f).apply {
             firstComponent = ScrollPaneFactory.createScrollPane(table)
-            secondComponent = changes
+            secondComponent = lower
         }
 
         loading = JBLoadingPanel(BorderLayout(), content).apply {
@@ -164,18 +199,17 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         ApplicationManager.getApplication().executeOnPooledThread {
             val roots = LoreRootFinder.mappedRoots(project).map { it.toNioPath() }
             val entries = roots.flatMap { root -> load(root, selected) }
-            val names = roots.firstOrNull()?.let { root ->
+            val found = roots.firstOrNull()?.let { root ->
                 runCatching { LoreBranchApi.list(root).filterNot { it.isArchived } }
                     .onFailure { log.warn("Cannot list Lore branches for $root", it) }
                     .getOrDefault(emptyList())
-                    .map { it.name }
-                    .distinct()
-                    .sorted()
             }.orEmpty()
+            val names = found.map { it.name }.distinct().sorted()
             val state = repositoryState(roots.firstOrNull(), entries)
 
             ApplicationManager.getApplication().invokeLater {
                 all = entries
+                known = found
                 showBranches(names)
                 applyFilter(filter.filter ?: "")
                 table.updateColumnSizes()
@@ -191,6 +225,19 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
      * Everything at or below the checkout's own revision number is synced;
      * Lore's chain is linear, so the number is enough to tell them apart.
      */
+    /**
+     * Which branches hold this revision. Derived from what is already loaded
+     * rather than asked for: every row in the walk belongs to the branch being
+     * shown, and asking Lore per row would be a call per selection.
+     */
+    private fun containing(row: LogRow): List<String> =
+        listOfNotNull(browsing?.name ?: currentBranchName().ifEmpty { null })
+
+    private fun currentBranchName(): String =
+        LoreRootFinder.mappedRoots(project).firstOrNull()
+            ?.let { LoreRepositoryState.getInstance(project).cached(it.toNioPath())?.branchName }
+            .orEmpty()
+
     private fun load(root: Path, branch: String): List<LogRow> {
         val branches = runCatching { LoreBranchApi.list(root) }
             .onFailure { log.warn("Cannot list Lore branches for $root", it) }
@@ -215,7 +262,14 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             }
 
         val synced = state?.revisionNumber ?: Long.MAX_VALUE
-        return history.map { LogRow(root, it, it.number <= synced) }
+        val tips = branches
+            .filterNot { it.latest.isNone }
+            .groupBy({ it.latest.hex }, { it.name })
+            .mapValues { (_, names) -> names.distinct() }
+
+        return history.map {
+            LogRow(root, it, it.number <= synced, tips[it.revision.hex].orEmpty())
+        }
     }
 
     /** Runs off the EDT: it reads repository state and the lock table. */
@@ -224,6 +278,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         val status = LoreRepositoryState.getInstance(project).of(root) ?: return null
 
         return LoreRepositoryPanel.State(
+            browsing = browsing?.name,
             branch = status.branchName,
             localRevision = status.revisionNumber,
             localHash = status.revision,
@@ -290,6 +345,9 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
      * question.
      */
     private fun showChangedFiles() {
+        val selected = table.selectedObjects.takeIf { it.size == 1 }?.single()
+        details.show(selected, selected?.let { row -> row.tips.ifEmpty { containing(row) } }.orEmpty())
+
         val pair = selectedSpan()
         if (pair == null) {
             changes.setChangesToDisplay(emptyList())
@@ -382,6 +440,57 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         }.queue()
     }
 
+    /** The file selected below, and the revision it should be read at. */
+    private fun selectedFile(): Triple<Path, String, LoreHistoryEntry>? {
+        val change = changes.selectedChanges.firstOrNull() ?: return null
+        val row = table.selectedObjects.firstOrNull() ?: return null
+        val path = (change.afterRevision ?: change.beforeRevision)?.file?.path ?: return null
+        val relative = runCatching { row.root.relativize(Path.of(path)).toString().replace('\\', '/') }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() && !it.startsWith("..") }
+            ?: return null
+        return Triple(row.root, relative, row.entry)
+    }
+
+    /** Only while browsing: against your own branch this is just the diff above. */
+    private inner class CompareWithWorkingCopyAction : AnAction(
+        LoreLensBundle.message("branch.compare.action"),
+        null,
+        com.intellij.icons.AllIcons.Actions.DiffWithClipboard,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabledAndVisible = browsing != null && selectedFile() != null
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val (root, relative, entry) = selectedFile() ?: return
+            LoreCrossBranch.compareWithWorkingCopy(
+                project, root, relative, entry.revision, entry.number, browsing?.name.orEmpty(),
+            )
+        }
+    }
+
+    private inner class TakeFromBranchAction : AnAction(
+        LoreLensBundle.message("branch.take.action"),
+        null,
+        com.intellij.icons.AllIcons.Actions.Download,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabledAndVisible = browsing != null && selectedFile() != null
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val (root, relative, entry) = selectedFile() ?: return
+            LoreCrossBranch.takeFromBranch(
+                project, root, relative, entry.revision, entry.number, browsing?.name.orEmpty(),
+            )
+        }
+    }
+
     /** Enabled for a single revision this checkout does not have. */
     private inner class SyncToRevisionAction : AnAction(
         LoreLensBundle.message("log.sync.revision"),
@@ -391,7 +500,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
 
         override fun update(e: AnActionEvent) {
-            e.presentation.isEnabled = table.selectedObjects.size == 1
+            e.presentation.isEnabledAndVisible = browsing == null && table.selectedObjects.size == 1
         }
 
         override fun actionPerformed(e: AnActionEvent) {
