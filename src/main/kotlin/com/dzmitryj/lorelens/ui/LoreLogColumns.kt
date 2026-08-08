@@ -3,6 +3,7 @@ package com.dzmitryj.lorelens.ui
 import com.dzmitryj.lorelens.LoreLensBundle
 import com.dzmitryj.lorelens.api.LoreHistoryEntry
 import com.intellij.ui.ColoredTableCellRenderer
+import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.speedSearch.SpeedSearchUtil
 import com.intellij.util.text.DateFormatUtil
@@ -16,7 +17,13 @@ import javax.swing.table.TableCellRenderer
  * has that revision yet. History is walked from the remote branch tip, so rows
  * above the synced position are real revisions that simply are not here.
  */
-data class LogRow(val root: Path, val entry: LoreHistoryEntry, val synced: Boolean)
+data class LogRow(
+    val root: Path,
+    val entry: LoreHistoryEntry,
+    val synced: Boolean,
+    /** Branches whose tip is this revision, rendered as chips on the row. */
+    val tips: List<String> = emptyList(),
+)
 
 /**
  * Columns render through SimpleColoredComponent rather than the default
@@ -122,9 +129,33 @@ private class MessageColumn : LoreLogColumn(LoreLensBundle.message("log.column.m
     override fun getComparator(): Comparator<LogRow> = compareBy { it.entry.subject.orEmpty() }
 
     override fun ColoredTableCellRenderer.render(row: LogRow) {
+        // Chips first, as the Log does, so the eye finds the branch before the
+        // message rather than hunting for it at the end of a long subject.
+        row.tips.forEach { name ->
+            append(" $name ", CHIP)
+            append(" ", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+        }
+
+        if (row.entry.isMerge) {
+            append(
+                "${LoreLensBundle.message("log.merge")} ",
+                SimpleTextAttributes.GRAYED_BOLD_ATTRIBUTES,
+            )
+        }
+
         append(row.entry.subject.orEmpty(), attributes(row))
         row.entry.metadata.body?.let { body ->
             append("  ${body.lineSequence().first()}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
         }
+    }
+
+    private companion object {
+        /** A branch label, painted like the Log's rather than spelled out. */
+        val CHIP = SimpleTextAttributes(
+            JBColor(0xD5E8D4, 0x39503B),
+            JBColor.foreground(),
+            null,
+            SimpleTextAttributes.STYLE_SMALLER,
+        )
     }
 }
