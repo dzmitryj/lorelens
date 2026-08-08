@@ -64,11 +64,21 @@ class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
     override fun allowsNestedRoots(): Boolean = true
 
     /**
-     * Hides the platform's Shelf tab. Shelving is patch-based and sidesteps
-     * Lore's staged state; there is no Lore-native equivalent to put in its
-     * place, so the tab simply goes.
+     * Deliberately left at the default.
+     *
+     * Setting it looks right -- it hides the platform's Shelf tab -- but
+     * git4idea reads the same flag through
+     * ShelvedChangesViewManager.hideDefaultShelfTab and takes it as "the shelf
+     * tab is gone, so mine should cover shelves too", showing its Stashes and
+     * Shelves tab unconditionally. The net effect was more shelving UI, not
+     * less.
+     *
+     * Left alone, both tabs are content-gated: the Shelf tab needs a shelved
+     * list and the combined tab needs a Git stash. With every Shelve action
+     * hidden in Lore projects there is no way to create either, so both stay
+     * hidden on their own.
      */
-    override fun isWithCustomShelves(): Boolean = true
+    override fun isWithCustomShelves(): Boolean = false
 
     companion object {
         const val NAME = "LoreLens"
