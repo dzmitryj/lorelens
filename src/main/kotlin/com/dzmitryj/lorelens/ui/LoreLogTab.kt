@@ -72,6 +72,9 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     /** The rows currently on screen, which the graph column paints against. */
     private var visible: List<LogRow> = emptyList()
 
+    /** Lane per revision, so the Branch column can match the graph's colours. */
+    private var laneByHash: Map<String, Int> = emptyMap()
+
     private val model = ListTableModel(
         LoreLogColumn.columns(
             LoreGraphColumn(
@@ -80,6 +83,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 isMerge = { index -> visible.getOrNull(index)?.entry?.isMerge == true },
             ),
             rows = { visible },
+            laneOf = { row -> laneByHash[row.entry.revision.hex] },
         ),
         emptyList<LogRow>(),
     )
@@ -343,13 +347,21 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 val scoped = walked.attributed
                     .filter { keep.isEmpty() || it.hash in keep }
 
+                // Synced is what the checkout's own revision reaches through the
+                // whole graph. The per-branch walks follow first parents only,
+                // so work that arrived through a merge's second parent counted
+                // as missing when it is sitting right here.
+                val sync = state?.revision?.hex
+                    ?.let { LoreLogOrder.reachable(it, parents) }
+                    ?.takeIf { it.isNotEmpty() }
+
                 val labels = LoreBranchWalks.mergeLabels(walked.attributed)
                 return LoreLogOrder.topological(scoped).mapNotNull { input ->
                     val entry = walked.entries[input.hash] ?: return@mapNotNull null
                     LogRow(
                         root = root,
                         entry = entry,
-                        synced = input.synced,
+                        synced = sync == null || input.hash in sync,
                         tips = tips[input.hash].orEmpty(),
                         merged = labels[input.hash],
                         branch = input.branch,
@@ -469,6 +481,9 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 )
             },
         )
+        laneByHash = rows.withIndex().associate { (index, row) ->
+            row.entry.revision.hex to graphRows[index].lane
+        }
         visible = rows
         model.items = rows
         // Lane count and chip widths both come from the rows, so the columns
