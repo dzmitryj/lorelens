@@ -488,6 +488,43 @@ class LoreRepositoryIntegrationTest {
         assertTrue(LoreStatusApi.status(repository, staged = false).files.isEmpty())
     }
 
+    /**
+     * Lore reports both sides of a merge in the history entry's parent array.
+     * The generator dropped that field without a word, so every revision looked
+     * like it had one parent and the log drew a straight line through merges.
+     */
+    @Test
+    fun `a merge revision reports two parents`() {
+        repository.resolve("base.txt").writeText("base")
+        LoreWriteApi.stage(repository, listOf("base.txt"))
+        LoreWriteApi.commit(repository, "base")
+
+        val main = LoreStatusApi.status(repository, scan = true).revision!!.branchName
+
+        LoreBranchApi.create(repository, "side")
+        LoreBranchApi.switch(repository, "side")
+        repository.resolve("side.txt").writeText("from the side branch")
+        LoreWriteApi.stage(repository, listOf("side.txt"))
+        LoreWriteApi.commit(repository, "side work")
+
+        LoreBranchApi.switch(repository, main)
+        repository.resolve("main.txt").writeText("from main")
+        LoreWriteApi.stage(repository, listOf("main.txt"))
+        LoreWriteApi.commit(repository, "main work")
+
+        LoreBranchApi.mergeInto(repository, "side", "merge side into $main")
+
+        val history = LoreHistoryApi.history(repository, 20)
+        val ordinary = history.single { it.subject == "main work" }
+        assertEquals(1, ordinary.parents.size)
+        assertTrue("an ordinary revision is not a merge", !ordinary.isMerge)
+
+        val merge = history.firstOrNull { it.isMerge }
+        assertTrue("expected a merge in ${history.map { it.subject }}", merge != null)
+        assertEquals(2, merge!!.parents.size)
+        assertTrue("both parents must be real", merge.parents.none { it.isNone })
+    }
+
     @Test
     fun `hashing reports content addresses`() {
         repository.resolve("d.txt").writeText("addressable")

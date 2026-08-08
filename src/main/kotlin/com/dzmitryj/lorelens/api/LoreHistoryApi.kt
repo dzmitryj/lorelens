@@ -18,7 +18,11 @@ data class LoreHistoryEntry(
     val revision: LoreRevisionId,
     val number: Long,
     val metadata: LoreMetadata,
+    /** Direct parent first; a second entry means this revision is a merge. */
+    val parents: List<LoreRevisionId> = emptyList(),
 ) {
+    val isMerge: Boolean get() = parents.size > 1
+
     val message: String? get() = metadata.message
     val subject: String? get() = metadata.subject
     val author: String? get() = metadata.author
@@ -31,8 +35,7 @@ object LoreHistoryApi {
      * History streams one entry event per revision, with that revision's
      * metadata arriving as separate events in between. Entries are therefore
      * assembled by attributing each metadata event to the entry it follows.
-     */
-    /**
+     *
      * @param branch restricts to one branch; empty is the current one.
      * @param from starts at this revision rather than the head, which is what
      *   makes paging possible.
@@ -93,11 +96,15 @@ object LoreHistoryApi {
         val entries = mutableListOf<LoreHistoryEntry>()
         var revision: LoreRevisionId? = null
         var number = 0L
+        var parents = emptyList<LoreRevisionId>()
         var metadata = mutableMapOf<String, String>()
 
         fun flush() {
-            revision?.let { entries += LoreHistoryEntry(it, number, LoreMetadata(metadata.toMap())) }
+            revision?.let {
+                entries += LoreHistoryEntry(it, number, LoreMetadata(metadata.toMap()), parents)
+            }
             revision = null
+            parents = emptyList()
             metadata = mutableMapOf()
         }
 
@@ -107,6 +114,9 @@ object LoreHistoryApi {
                     flush()
                     revision = LoreRevisionId(event.revision)
                     number = event.revision_number
+                    // The array is fixed at two and zero-filled when absent, so
+                    // the empty slots have to be dropped rather than trusted.
+                    parents = event.parent.map(::LoreRevisionId).filterNot { it.isNone }
                 }
 
                 is MetadataEvent -> LoreMetadata.render(event.key, event.value)?.let {

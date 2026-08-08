@@ -5,9 +5,11 @@ import com.dzmitryj.lorelens.ffi.LoreArgs
 import com.dzmitryj.lorelens.ffi.LoreResult
 import com.dzmitryj.lorelens.ffi.generated.BranchListEntryEvent
 import com.dzmitryj.lorelens.ffi.generated.LoreFunctions
+import com.dzmitryj.lorelens.ffi.generated.lore_branch_create_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_list_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_abort_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_resolve_args_t
+import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_start_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_resolve_mine_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_resolve_theirs_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_unresolve_args_t
@@ -33,6 +35,41 @@ object LoreBranchApi {
                 },
                 "branch list",
             ).filter<BranchListEntryEvent>().map { it.toModel() }
+        }
+
+    fun create(root: Path, branch: String, category: String = ""): LoreResult =
+        Arena.ofConfined().use { arena ->
+            val args = LoreArgs(arena)
+            val globals = args.globals(root)
+            val options = arena.allocate(lore_branch_create_args_t.LAYOUT)
+            args.writeString(lore_branch_create_args_t.branch(options), branch)
+            if (category.isNotEmpty()) {
+                args.writeString(lore_branch_create_args_t.category(options), category)
+            }
+
+            LoreClient.require(
+                EventPump.call(arena) { callback ->
+                    LoreFunctions.lore_branch_create.invokeExact(globals, options, callback) as Int
+                },
+                "create branch $branch",
+            )
+        }
+
+    /** Merges [branch] into the current one, committing when there is no conflict. */
+    fun mergeInto(root: Path, branch: String, message: String): LoreResult =
+        Arena.ofConfined().use { arena ->
+            val args = LoreArgs(arena)
+            val globals = args.globals(root)
+            val options = arena.allocate(lore_branch_merge_start_args_t.LAYOUT)
+            args.writeString(lore_branch_merge_start_args_t.branch(options), branch)
+            args.writeString(lore_branch_merge_start_args_t.message(options), message)
+
+            LoreClient.require(
+                EventPump.call(arena) { callback ->
+                    LoreFunctions.lore_branch_merge_start.invokeExact(globals, options, callback) as Int
+                },
+                "merge $branch",
+            )
         }
 
     /**

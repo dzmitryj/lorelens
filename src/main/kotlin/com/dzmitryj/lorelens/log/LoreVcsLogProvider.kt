@@ -148,7 +148,11 @@ class LoreVcsLogProvider(private val project: Project) : VcsLogProvider {
 
     // -- data -------------------------------------------------------------
 
-    /** One revision plus the revision under it, which is its parent. */
+    /**
+     * A revision plus the entry under it. Parents come from Lore itself, which
+     * reports both sides of a merge; the neighbour is kept only to diff against,
+     * where the first parent is what a revision's changes are measured from.
+     */
     private class Step(val entry: LoreHistoryEntry, val parent: LoreHistoryEntry?)
 
     /**
@@ -188,7 +192,15 @@ class LoreVcsLogProvider(private val project: Project) : VcsLogProvider {
 
     private fun hash(entry: LoreHistoryEntry): Hash = factory.createHash(entry.revision.hex)
 
-    private fun parents(step: Step): List<Hash> = listOfNotNull(step.parent?.let(::hash))
+    /**
+     * Lore reports the real parents, including the second side of a merge, so
+     * the graph draws merge topology rather than a straight line. Falling back
+     * to the neighbour covers the oldest revision in a truncated walk.
+     */
+    private fun parents(step: Step): List<Hash> =
+        step.entry.parents
+            .map { factory.createHash(it.hex) }
+            .ifEmpty { listOfNotNull(step.parent?.let(::hash)) }
 
     private fun user(name: String?): VcsUser = (name ?: "unknown").let { factory.createUser(it, it) }
 

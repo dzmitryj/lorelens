@@ -20,6 +20,17 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
     private val taggedUnions = linkedSetOf<String>()
 
     /**
+     * Every field this emitter could not represent, as "struct.field: ctype".
+     *
+     * Fields are skipped rather than failed because some genuinely carry
+     * nothing worth exposing -- raw pointers, `_unused` placeholders. The
+     * problem is that a skip is invisible: metadata values disappeared this way
+     * once, and revision parents a second time. Main writes this list out and a
+     * test pins it, so a new skip fails the build instead of going unnoticed.
+     */
+    val droppedFields = sortedSetOf<String>()
+
+    /**
      * A struct of exactly a tag plus an anonymous union, like lore_metadata_t.
      * Without this the union member is dropped and the value silently
      * disappears, which is how metadata values were lost before.
@@ -219,7 +230,12 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
 
     private fun dataClassBody(name: String, struct: CStruct, superType: String): String {
         val properties = struct.fields.mapNotNull { field ->
-            kotlinType(field.type)?.let { type -> "    val ${safe(field.name)}: $type," }
+            val type = kotlinType(field.type)
+            if (type == null) {
+                droppedFields += "${struct.name}.${field.name}: ${describe(field.type)}"
+                return@mapNotNull null
+            }
+            "    val ${safe(field.name)}: $type,"
         }
         return if (properties.isEmpty()) {
             "class $name$superType\n"
@@ -240,6 +256,12 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
             return if (carrier == "MemorySegment") null else carrier
         }
         val resolved = types.resolve(type)
+
+        // A fixed-length array declared inline, such as `lore_hash_t parent[2]`.
+        // Distinct from the pointer-and-count array structs handled below.
+        if (resolved is CType.Array) {
+            return elementKotlinType(resolved.element)?.let { "List<$it>" }
+        }
         if (resolved !is CType.StructRef) return null
 
         return when {
@@ -271,6 +293,11 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
         val resolved = types.resolve(field.type)
         if (types.carrierType(field.type) != null) return accessor
 
+        if (resolved is CType.Array) {
+            val size = types.sizeOf(resolved.element)
+            return "LoreCopy.inlineArray($accessor, ${resolved.length}, ${size}L) { ${elementReader(resolved.element)} }"
+        }
+
         resolved as CType.StructRef
         return when {
             isTaggedUnionRef(resolved) -> "read${payloadClassName(resolved.name)}($accessor)"
@@ -297,6 +324,15 @@ class EventEmitter(private val header: CHeader, private val types: TypeMapper) {
         element is CType.StructRef ->
             "${payloadClassName(element.name)}(${readArguments(header.struct(element.name), "it")})"
         else -> "it.get(${types.layoutExpression(element)}, 0L)"
+    }
+
+    private fun describe(type: CType): String = when (type) {
+        is CType.StructRef -> type.name
+        is CType.EnumRef -> type.name
+        is CType.Array -> "${describe(type.element)}[${type.length}]"
+        is CType.Pointer -> "${describe(type.target)}*"
+        is CType.InlineUnion -> "union"
+        else -> type.toString()
     }
 
     private fun memberName(constantName: String): String =
