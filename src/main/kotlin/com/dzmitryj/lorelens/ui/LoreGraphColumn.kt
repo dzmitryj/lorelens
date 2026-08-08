@@ -55,7 +55,9 @@ class LoreGraphColumn(private val rows: () -> List<LoreGraphLayout.Row>) :
             val model = row ?: return
             val g2 = g as Graphics2D
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g2.stroke = BasicStroke(JBUI.scale(1.5f))
+            // Halved from an int scale: the float overload of JBUI.scale is
+            // deprecated, and this keeps the same 1.5px line at 100%.
+            g2.stroke = BasicStroke(JBUI.scale(3) / 2f)
 
             val lane = JBUI.scale(LANE)
             val middle = height / 2
