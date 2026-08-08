@@ -5,8 +5,10 @@ import com.dzmitryj.lorelens.api.LoreBranchApi
 import com.dzmitryj.lorelens.api.LoreDiffApi
 import com.dzmitryj.lorelens.api.LoreHistoryApi
 import com.dzmitryj.lorelens.api.LoreHistoryEntry
+import com.dzmitryj.lorelens.api.LoreWriteApi
 import com.dzmitryj.lorelens.changes.LoreContentRevision
 import com.dzmitryj.lorelens.changes.LoreRevisionNumber
+import com.dzmitryj.lorelens.lock.LoreLockService
 import com.dzmitryj.lorelens.model.LoreBranchLocation
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionChain
@@ -39,19 +41,14 @@ import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.PopupHandler
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.TableSpeedSearch
-import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBLoadingPanel
 import com.intellij.ui.content.Content
 import com.intellij.ui.table.TableView
-import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.ListTableModel
-import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
-import java.awt.FlowLayout
 import java.awt.event.MouseEvent
 import java.nio.file.Path
 import javax.swing.DefaultComboBoxModel
-import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.ListSelectionModel
 
@@ -79,11 +76,10 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     private val branches = ComboBox(DefaultComboBoxModel(arrayOf(CURRENT_BRANCH)))
 
     /** Where this checkout sits, in the tab rather than only in the status bar. */
-    private val summary = JBLabel().apply { foreground = UIUtil.getContextHelpForeground() }
-    private val syncToLatest = JButton(LoreLensBundle.message("log.sync.latest")).apply {
-        isVisible = false
-        addActionListener { sync(revision = "") }
-    }
+    private val repository = LoreRepositoryPanel(
+        onSyncToLatest = { sync(revision = "") },
+        onPush = ::push,
+    )
 
     override fun initTabContent(content: Content) {
         table.apply {
@@ -130,7 +126,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             add(splitter, BorderLayout.CENTER)
         }
 
-        content.component = JPanel(BorderLayout()).apply {
+        val header = JPanel(BorderLayout()).apply {
             add(
                 JPanel(BorderLayout()).apply {
                     add(
@@ -139,13 +135,6 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                             .also { it.targetComponent = this }
                             .component,
                         BorderLayout.WEST,
-                    )
-                    add(
-                        JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0)).apply {
-                            add(summary)
-                            add(syncToLatest)
-                        },
-                        BorderLayout.CENTER,
                     )
                     add(
                         JPanel(BorderLayout()).apply {
@@ -157,6 +146,11 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 },
                 BorderLayout.NORTH,
             )
+            add(repository, BorderLayout.SOUTH)
+        }
+
+        content.component = JPanel(BorderLayout()).apply {
+            add(header, BorderLayout.NORTH)
             add(loading, BorderLayout.CENTER)
         }
 
@@ -178,14 +172,14 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                     .distinct()
                     .sorted()
             }.orEmpty()
-            val behind = entries.count { !it.synced }
+            val state = repositoryState(roots.firstOrNull(), entries)
 
             ApplicationManager.getApplication().invokeLater {
                 all = entries
                 showBranches(names)
                 applyFilter(filter.filter ?: "")
                 table.updateColumnSizes()
-                showSummary(behind)
+                repository.show(state)
                 loading.stopLoading()
             }
         }
@@ -224,12 +218,46 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         return history.map { LogRow(root, it, it.number <= synced) }
     }
 
-    private fun showSummary(behind: Int) {
-        summary.text = when {
-            behind > 0 -> LoreLensBundle.message("log.behind", behind)
-            else -> LoreLensBundle.message("log.up.to.date")
-        }
-        syncToLatest.isVisible = behind > 0
+    /** Runs off the EDT: it reads repository state and the lock table. */
+    private fun repositoryState(root: Path?, rows: List<LogRow>): LoreRepositoryPanel.State? {
+        if (root == null) return null
+        val status = LoreRepositoryState.getInstance(project).of(root) ?: return null
+
+        return LoreRepositoryPanel.State(
+            branch = status.branchName,
+            localRevision = status.revisionNumber,
+            localHash = status.revision,
+            remoteRevision = rows.firstOrNull()?.entry?.number,
+            behind = rows.count { !it.synced },
+            localAhead = status.localAhead,
+            remoteAvailable = status.remoteAvailable,
+            locksHeld = LoreLockService.getInstance(project).heldByMe(),
+        )
+    }
+
+    private fun push() {
+        val root = LoreRootFinder.mappedRoots(project).firstOrNull()?.toNioPath() ?: return
+
+        object : Task.Backgroundable(project, LoreLensBundle.message("repo.push.progress"), true) {
+            private var failure: Throwable? = null
+
+            override fun run(indicator: ProgressIndicator) {
+                failure = runCatching { LoreWriteApi.push(root) }.exceptionOrNull()
+                    ?.also { log.warn("Cannot push $root", it) }
+            }
+
+            override fun onFinished() {
+                LoreRepositoryState.getInstance(project).invalidateAll()
+                failure?.let {
+                    Messages.showErrorDialog(
+                        project,
+                        it.message ?: LoreLensBundle.message("repo.push.failed"),
+                        LoreLensBundle.message("repo.push.failed"),
+                    )
+                }
+                refresh()
+            }
+        }.queue()
     }
 
     /** Rebuilt in place, so reselecting must not fire another refresh. */
