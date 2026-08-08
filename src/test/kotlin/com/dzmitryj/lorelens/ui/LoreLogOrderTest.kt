@@ -55,6 +55,29 @@ class LoreLogOrderTest {
         assertTrue(position["side"]!! < position["base"]!!)
     }
 
+    /** The log of a branch: its history and what was merged in, nothing else. */
+    @Test
+    fun `reachable keeps merged work and drops unmerged work`() {
+        val parents = mapOf(
+            "tip" to listOf("merge"),
+            "merge" to listOf("base", "side"),
+            "side" to listOf("base"),
+            "base" to emptyList(),
+            // Another branch's commit, not merged anywhere near the tip.
+            "elsewhere" to listOf("base"),
+        )
+
+        val keep = LoreLogOrder.reachable("tip", parents)
+
+        assertEquals(setOf("tip", "merge", "side", "base"), keep)
+    }
+
+    /** A tip outside the window yields nothing rather than throwing. */
+    @Test
+    fun `reachable from an unknown tip is empty`() {
+        assertEquals(emptySet<String>(), LoreLogOrder.reachable("gone", mapOf("a" to emptyList())))
+    }
+
     /** A parent outside the window must not stall the walk. */
     @Test
     fun `unknown parents are ignored`() {

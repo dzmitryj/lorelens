@@ -317,14 +317,30 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             .groupBy({ it.first }, { it.second })
             .mapValues { (_, names) -> names.distinct() }
 
-        // The default view is every branch together. A single branch's walk
-        // follows first parents only, so the other side of each merge is
-        // missing and the graph cannot draw it; the union has both sides.
+        // The default view is the current branch's ancestry: its own revisions
+        // plus what was merged into it. A single walk cannot produce this --
+        // it follows first parents only, so the other side of each merge is
+        // missing -- and the union of every branch shows too much: the other
+        // branches' unmerged work is their business. So: walk everything, keep
+        // what the branch tip reaches.
         if (branch.isEmpty()) {
             val walked = walkAll(root, branches.filterNot { it.isArchived })
             if (walked != null) {
+                val name = state?.branchName.orEmpty()
+                val tip = branches
+                    .filter { it.name == name && !it.latest.isNone }
+                    // Remote first: revisions this checkout has not synced are
+                    // still on the branch, so the log should show them.
+                    .minByOrNull { if (it.location == LoreBranchLocation.REMOTE) 0 else 1 }
+                    ?.latest?.hex
+
+                val parents = walked.entries.mapValues { (_, entry) -> entry.parents.map { it.hex } }
+                val keep = tip?.let { LoreLogOrder.reachable(it, parents) }.orEmpty()
+                val scoped = walked.attributed
+                    .filter { keep.isEmpty() || it.hash in keep }
+
                 val labels = LoreBranchWalks.mergeLabels(walked.attributed)
-                return LoreLogOrder.topological(walked.attributed).mapNotNull { input ->
+                return LoreLogOrder.topological(scoped).mapNotNull { input ->
                     val entry = walked.entries[input.hash] ?: return@mapNotNull null
                     LogRow(
                         root = root,

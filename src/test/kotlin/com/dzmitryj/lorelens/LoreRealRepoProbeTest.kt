@@ -116,5 +116,30 @@ class LoreRealRepoProbeTest {
                 (lower.incoming.map { it.from } + lower.through).toSet()
         }
         println("PROBE union broken boundaries=$broken")
+
+        // What the History tab shows: the current branch's ancestry only.
+        val parents = walked.entries.mapValues { (_, entry) -> entry.parents.map { it.hex } }
+        val tip = branches
+            .filter { it.name == "dev-main" && !it.latest.isNone }
+            .minByOrNull { if (it.location == LoreBranchLocation.REMOTE) 0 else 1 }
+            ?.latest?.hex ?: return
+        val keep = com.dzmitryj.lorelens.ui.LoreLogOrder.reachable(tip, parents)
+        val scoped = walked.attributed.filter { it.hash in keep }
+        println("PROBE scoped rows=${scoped.size} of ${walked.attributed.size}")
+        scoped.groupingBy { it.branch }.eachCount().toSortedMap().forEach { (branch, count) ->
+            println("PROBE scoped $branch=$count")
+        }
+        val scopedLanes = com.dzmitryj.lorelens.ui.LoreHistoryLanes.layout(
+            com.dzmitryj.lorelens.ui.LoreLogOrder.topological(scoped)
+                .map { com.dzmitryj.lorelens.ui.LoreHistoryLanes.Input(it.hash, it.parents) },
+        )
+        println("PROBE scoped maxWidth=${scopedLanes.maxOfOrNull { it.width }}")
+        println(
+            "PROBE scoped curves=${scopedLanes.sumOf { row -> (row.incoming + row.outgoing).count { it.from != it.to } }} " +
+                "broken=${scopedLanes.zipWithNext().count { (upper, lower) ->
+                    (upper.outgoing.map { it.to } + upper.through).toSet() !=
+                        (lower.incoming.map { it.from } + lower.through).toSet()
+                }}",
+        )
     }
 }

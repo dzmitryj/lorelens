@@ -10,6 +10,27 @@ import java.util.PriorityQueue
  */
 object LoreLogOrder {
 
+    /**
+     * Everything the tip reaches through parents: the branch's own history plus
+     * what was merged into it, and nothing that was not. This is what "the log
+     * of a branch" means; the union of every branch would also show the other
+     * branches' unmerged work, which is their business.
+     */
+    fun reachable(tip: String, parents: Map<String, List<String>>): Set<String> {
+        val seen = HashSet<String>()
+        val queue = ArrayDeque<String>()
+        if (tip in parents) {
+            seen += tip
+            queue += tip
+        }
+        while (queue.isNotEmpty()) {
+            parents.getValue(queue.removeFirst()).forEach { parent ->
+                if (parent in parents && seen.add(parent)) queue += parent
+            }
+        }
+        return seen
+    }
+
     fun topological(inputs: List<LoreBranchGraphLayout.Input>): List<LoreBranchGraphLayout.Input> {
         val byHash = inputs.associateBy { it.hash }
         val pendingChildren = HashMap<String, Int>()
