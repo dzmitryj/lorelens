@@ -2,7 +2,6 @@ package com.dzmitryj.lorelens.ui
 
 import com.dzmitryj.lorelens.LoreLensBundle
 import com.intellij.ui.JBColor
-import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
@@ -11,22 +10,16 @@ import java.awt.BasicStroke
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Cursor
-import java.awt.Dimension
-import java.awt.FlowLayout
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Point
-import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseMotionAdapter
-import java.awt.event.MouseWheelEvent
 import java.awt.geom.Path2D
 import javax.swing.JComponent
 import javax.swing.JPanel
-import javax.swing.JScrollPane
-import javax.swing.JSlider
 import javax.swing.SwingUtilities
 
 /**
@@ -34,8 +27,9 @@ import javax.swing.SwingUtilities
  * revision badged with its author, and a turn wherever a branch was cut or
  * merged back.
  *
- * Navigation is the point as much as the drawing: the graph is wider than any
- * window, so it pans by dragging empty space and zooms about the cursor.
+ * There is no scroll pane. The graph is always wider than the window, and
+ * dragging it is a better fit than scrollbars, so the canvas owns its own pan
+ * offset and zoom. Reset Focus in the toolbar puts it back.
  */
 class LoreBranchGraphPanel(
     private val onSelectCommit: (LoreBranchGraphLayout.Node?) -> Unit,
@@ -45,16 +39,11 @@ class LoreBranchGraphPanel(
 
     private var graph = LoreBranchGraphLayout.Graph(emptyList(), emptyList(), emptyList())
     private var current: String = ""
+    private var currentRevision: String? = null
     private var selected: String? = null
     private var hovered: String? = null
 
     private val canvas = Canvas()
-    private val scroll: JScrollPane = ScrollPaneFactory.createScrollPane(canvas, true)
-
-    private val zoom = JSlider(MIN_ZOOM, MAX_ZOOM, DEFAULT_ZOOM).apply {
-        toolTipText = LoreLensBundle.message("graph.zoom.tip")
-        addChangeListener { rescale() }
-    }
 
     private val empty = JBLabel(LoreLensBundle.message("graph.empty")).apply {
         foreground = UIUtil.getContextHelpForeground()
@@ -62,77 +51,52 @@ class LoreBranchGraphPanel(
     }
 
     init {
-        add(
-            JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0)).apply {
-                add(
-                    JBLabel(LoreLensBundle.message("graph.zoom")).apply {
-                        foreground = UIUtil.getContextHelpForeground()
-                    },
-                )
-                add(zoom)
-                add(
-                    JBLabel(LoreLensBundle.message("graph.hint")).apply {
-                        foreground = UIUtil.getContextHelpForeground()
-                        font = JBFont.small()
-                    },
-                )
-            },
-            BorderLayout.NORTH,
-        )
-        add(scroll, BorderLayout.CENTER)
+        add(canvas, BorderLayout.CENTER)
         canvas.install()
     }
 
-    fun show(graph: LoreBranchGraphLayout.Graph, currentBranch: String) {
+    fun show(
+        graph: LoreBranchGraphLayout.Graph,
+        currentBranch: String,
+        currentRevision: String?,
+    ) {
         this.graph = graph
         this.current = currentBranch
+        this.currentRevision = currentRevision
         selected = null
         hovered = null
 
         remove(empty)
         if (graph.nodes.isEmpty()) add(empty, BorderLayout.SOUTH)
 
-        canvas.revalidate()
-        canvas.repaint()
+        resetFocus()
     }
 
-    fun select(hash: String?) {
-        selected = hash
-        canvas.repaint()
-    }
-
-    private fun scale(): Double = zoom.value / 100.0
-
-    /** Keeps whatever is under the middle of the view there after a rescale. */
-    private fun rescale(anchor: Point? = null) {
-        val view = scroll.viewport
-        val focus = anchor ?: Point(
-            view.viewPosition.x + view.width / 2,
-            view.viewPosition.y + view.height / 2,
-        )
-        val before = canvas.preferredSize
-        canvas.revalidate()
-        canvas.repaint()
-
-        SwingUtilities.invokeLater {
-            val after = canvas.preferredSize
-            if (before.width <= 0 || after.width <= 0) return@invokeLater
-
-            val ratioX = after.width.toDouble() / before.width
-            val ratioY = after.height.toDouble() / before.height
-            val x = (focus.x * ratioX - view.width / 2).toInt().coerceAtLeast(0)
-            val y = (focus.y * ratioY - view.height / 2).toInt().coerceAtLeast(0)
-            view.viewPosition = Point(x, y)
-        }
+    /**
+     * Back to the start of history at a readable size. Without scrollbars there
+     * is no other way back once the graph has been dragged somewhere odd.
+     */
+    fun resetFocus() {
+        canvas.reset()
     }
 
     private inner class Canvas : JComponent() {
 
+        private var zoom = 1.0
+        private var panX = 0
+        private var panY = 0
         private var dragFrom: Point? = null
 
         init {
             isOpaque = true
             background = UIUtil.getListBackground()
+        }
+
+        fun reset() {
+            zoom = 1.0
+            panX = 0
+            panY = 0
+            repaint()
         }
 
         fun install() {
@@ -141,8 +105,6 @@ class LoreBranchGraphPanel(
                     val node = nodeAt(event.point)
 
                     if (SwingUtilities.isRightMouseButton(event)) {
-                        // Right-click acts on what is under the cursor, so the
-                        // selection moves there first.
                         when {
                             node != null -> {
                                 selected = node.hash
@@ -183,12 +145,10 @@ class LoreBranchGraphPanel(
             addMouseMotionListener(object : MouseMotionAdapter() {
                 override fun mouseDragged(event: MouseEvent) {
                     val from = dragFrom ?: return
-                    val view = scroll.viewport
-                    val at = view.viewPosition
-                    view.viewPosition = Point(
-                        (at.x + from.x - event.x).coerceIn(0, maxOf(0, width - view.width)),
-                        (at.y + from.y - event.y).coerceIn(0, maxOf(0, height - view.height)),
-                    )
+                    panX += event.x - from.x
+                    panY += event.y - from.y
+                    dragFrom = event.point
+                    repaint()
                 }
 
                 override fun mouseMoved(event: MouseEvent) {
@@ -207,50 +167,32 @@ class LoreBranchGraphPanel(
             })
 
             addMouseWheelListener { event ->
-                when {
-                    // Zoom about the cursor: zooming about the origin is useless
-                    // once the graph is wider than the window.
-                    event.isControlDown -> {
-                        val focus = Point(event.x, event.y)
-                        val step = if (event.wheelRotation < 0) ZOOM_STEP else -ZOOM_STEP
-                        zoom.value = (zoom.value + step).coerceIn(MIN_ZOOM, MAX_ZOOM)
-                        rescale(focus)
-                    }
+                // Zoom about the cursor: about the origin it is useless once the
+                // graph runs past the edge of the window.
+                val before = zoom
+                val step = if (event.wheelRotation < 0) ZOOM_STEP else 1 / ZOOM_STEP
+                zoom = (zoom * step).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                if (zoom == before) return@addMouseWheelListener
 
-                    event.isShiftDown -> scrollBy(event.unitsToScroll * JBUI.scale(12), 0)
-                    else -> scrollBy(0, event.unitsToScroll * JBUI.scale(12))
-                }
+                val ratio = zoom / before
+                panX = (event.x - (event.x - panX) * ratio).toInt()
+                panY = (event.y - (event.y - panY) * ratio).toInt()
+                repaint()
             }
         }
 
-        private fun scrollBy(dx: Int, dy: Int) {
-            val view = scroll.viewport
-            val at = view.viewPosition
-            view.viewPosition = Point(
-                (at.x + dx).coerceIn(0, maxOf(0, width - view.width)),
-                (at.y + dy).coerceIn(0, maxOf(0, height - view.height)),
-            )
-        }
-
-        override fun getPreferredSize(): Dimension {
-            val step = step()
-            return Dimension(
-                LANE_LABEL + step * graph.columns.coerceAtLeast(1) + step,
-                (laneHeight() * graph.lanes.size.coerceAtLeast(1)) + JBUI.scale(16),
-            )
-        }
-
         fun nodeAt(point: Point): LoreBranchGraphLayout.Node? {
+            if (point.x < gutter()) return null
             val reach = radius() + JBUI.scale(3)
             return graph.nodes.firstOrNull { node ->
                 point.distance(xOf(node).toDouble(), yOf(node).toDouble()) <= reach
             }
         }
 
-        /** Which lane's label, if any, the point falls on. */
+        /** Which lane's pill, if any, the point falls on. */
         fun laneAt(point: Point): String? {
-            if (point.x > LANE_LABEL) return null
-            val lane = ((point.y - JBUI.scale(8)) / laneHeight().coerceAtLeast(1))
+            if (point.x > gutter()) return null
+            val lane = (point.y - panY - JBUI.scale(8)) / laneHeight().coerceAtLeast(1)
             return graph.lanes.getOrNull(lane)
         }
 
@@ -264,14 +206,16 @@ class LoreBranchGraphPanel(
 
             if (graph.nodes.isEmpty()) return
 
-            val clip = g2.clipBounds ?: Rectangle(0, 0, width, height)
-
+            // The graph is clipped to the right of the gutter so nothing can
+            // slide under the branch pills, which is what made them unreadable.
+            val gutter = gutter()
+            g2.clip = java.awt.Rectangle(gutter, 0, width - gutter, height)
             paintLaneLines(g2)
-            paintLinks(g2, clip)
-            paintNodes(g2, clip)
-            // Labels last and anchored to the viewport, so a lane can still be
-            // identified after scrolling a long way right.
-            paintLaneLabels(g2)
+            paintLinks(g2)
+            paintNodes(g2)
+
+            g2.clip = null
+            paintPills(g2)
         }
 
         private fun paintLaneLines(g2: Graphics2D) {
@@ -287,21 +231,26 @@ class LoreBranchGraphPanel(
             }
         }
 
-        private fun paintLaneLabels(g2: Graphics2D) {
-            val left = scroll.viewport.viewPosition.x
+        /** Pinned in their own column, which the graph never draws into. */
+        private fun paintPills(g2: Graphics2D) {
+            val gutter = gutter()
+            g2.color = background
+            g2.fillRect(0, 0, gutter, height)
 
             g2.font = JBFont.small()
             val metrics = g2.fontMetrics
 
             graph.lanes.forEachIndexed { lane, name ->
                 val y = laneY(lane)
+                if (y < -laneHeight() || y > height + laneHeight()) return@forEachIndexed
+
                 val label = if (name == current) {
                     "$name ${LoreLensBundle.message("graph.current")}"
                 } else {
                     name
                 }
                 val width = metrics.stringWidth(label)
-                val x = left + JBUI.scale(6)
+                val x = JBUI.scale(6)
 
                 g2.color = laneColour(lane)
                 g2.fillRoundRect(
@@ -317,14 +266,14 @@ class LoreBranchGraphPanel(
             }
         }
 
-        private fun paintLinks(g2: Graphics2D, clip: Rectangle) {
+        private fun paintLinks(g2: Graphics2D) {
             g2.stroke = BasicStroke(JBUI.scale(3) / 2f)
             val corner = JBUI.scale(6).toDouble()
 
             graph.links.forEach { link ->
                 val fromX = xOf(link.from).toDouble()
                 val toX = xOf(link.to).toDouble()
-                if (maxOf(fromX, toX) < clip.x || minOf(fromX, toX) > clip.x + clip.width) return@forEach
+                if (maxOf(fromX, toX) < 0 || minOf(fromX, toX) > width) return@forEach
 
                 val fromY = yOf(link.from).toDouble()
                 val toY = yOf(link.to).toDouble()
@@ -344,32 +293,47 @@ class LoreBranchGraphPanel(
             }
         }
 
-        private fun paintNodes(g2: Graphics2D, clip: Rectangle) {
+        private fun paintNodes(g2: Graphics2D) {
             val radius = radius()
             val showBadges = radius >= JBUI.scale(7)
 
             graph.nodes.forEach { node ->
                 val x = xOf(node)
-                if (x + radius < clip.x || x - radius > clip.x + clip.width) return@forEach
+                if (x + radius < 0 || x - radius > width) return@forEach
 
                 val y = yOf(node)
+                if (y + radius < 0 || y - radius > height) return@forEach
+
                 val emphasis = node.hash == hovered || node.hash == selected
                 val size = if (emphasis) radius + JBUI.scale(2) else radius
 
                 g2.color = LoreAuthorColours.colourOf(node.author)
                 g2.fillOval(x - size, y - size, size * 2, size * 2)
 
-                if (node.isMerge || emphasis) {
-                    g2.color = if (node.hash == selected) {
-                        UIUtil.getListSelectionBackground(true)
-                    } else {
-                        JBColor(Color.WHITE, Color.WHITE)
-                    }
-                    g2.stroke = BasicStroke(JBUI.scale(3) / 2f)
-                    g2.drawOval(x - size, y - size, size * 2, size * 2)
+                // A merge is a donut: distinct at a glance, still carries the
+                // author colour, and leaves the white ring free to mean one
+                // thing only.
+                if (node.isMerge) {
+                    val hole = (size * 0.45).toInt().coerceAtLeast(JBUI.scale(2))
+                    g2.color = background
+                    g2.fillOval(x - hole, y - hole, hole * 2, hole * 2)
                 }
 
-                if (!showBadges) return@forEach
+                g2.stroke = BasicStroke(JBUI.scale(3) / 2f)
+                when {
+                    // White means one thing: this is where the checkout sits.
+                    node.hash == currentRevision -> {
+                        g2.color = JBColor(Color.WHITE, Color.WHITE)
+                        g2.drawOval(x - size - 1, y - size - 1, size * 2 + 2, size * 2 + 2)
+                    }
+
+                    node.hash == selected -> {
+                        g2.color = UIUtil.getListSelectionBackground(true)
+                        g2.drawOval(x - size, y - size, size * 2, size * 2)
+                    }
+                }
+
+                if (!showBadges || node.isMerge) return@forEach
 
                 g2.color = JBColor(Color.WHITE, Color.WHITE)
                 g2.font = JBFont.small()
@@ -383,16 +347,20 @@ class LoreBranchGraphPanel(
             }
         }
 
-        private fun step(): Int = (JBUI.scale(STEP) * scale()).toInt().coerceAtLeast(JBUI.scale(3))
+        private fun gutter(): Int = JBUI.scale(GUTTER)
 
-        private fun radius(): Int = (JBUI.scale(RADIUS) * scale()).toInt().coerceAtLeast(JBUI.scale(2))
+        private fun step(): Int = (JBUI.scale(STEP) * zoom).toInt().coerceAtLeast(JBUI.scale(3))
+
+        private fun radius(): Int = (JBUI.scale(RADIUS) * zoom).toInt().coerceAtLeast(JBUI.scale(2))
 
         private fun laneHeight(): Int =
-            (JBUI.scale(LANE_HEIGHT) * scale()).toInt().coerceAtLeast(JBUI.scale(10))
+            (JBUI.scale(LANE_HEIGHT) * zoom).toInt().coerceAtLeast(JBUI.scale(10))
 
-        private fun laneY(lane: Int): Int = JBUI.scale(8) + laneHeight() / 2 + lane * laneHeight()
+        private fun laneY(lane: Int): Int =
+            panY + JBUI.scale(8) + laneHeight() / 2 + lane * laneHeight()
 
-        private fun xOf(node: LoreBranchGraphLayout.Node): Int = LANE_LABEL + node.column * step()
+        private fun xOf(node: LoreBranchGraphLayout.Node): Int =
+            gutter() + JBUI.scale(12) + panX + node.column * step()
 
         private fun yOf(node: LoreBranchGraphLayout.Node): Int = laneY(node.lane)
 
@@ -403,13 +371,11 @@ class LoreBranchGraphPanel(
         const val STEP = 22
         const val RADIUS = 9
         const val LANE_HEIGHT = 44
-        const val ZOOM_STEP = 10
+        const val GUTTER = 110
 
-        const val MIN_ZOOM = 25
-        const val MAX_ZOOM = 200
-        const val DEFAULT_ZOOM = 100
-
-        val LANE_LABEL = JBUI.scale(24)
+        const val ZOOM_STEP = 1.1
+        const val MIN_ZOOM = 0.25
+        const val MAX_ZOOM = 3.0
 
         val LANE_COLOURS: List<Color> = listOf(
             JBColor(0x5B8C3E, 0x6FA85A),

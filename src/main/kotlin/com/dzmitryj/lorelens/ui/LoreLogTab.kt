@@ -99,6 +99,11 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private var known: List<LoreBranch> = emptyList()
 
+    /** Merge hash to "from branch, into branch", filled in after the table loads. */
+    private var mergeLabels: Map<String, Pair<String, String>> = emptyMap()
+
+    private var mergeKey: String = ""
+
     private val details = LoreCommitDetailsPanel()
     /** Where this checkout sits, in the tab rather than only in the status bar. */
     private val repository = LoreRepositoryPanel(
@@ -224,6 +229,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             ApplicationManager.getApplication().invokeLater {
                 all = entries
                 known = found
+                loadMergeLabels(roots.firstOrNull(), found)
                 applyFilter(filter.filter ?: "")
                 table.updateColumnSizes()
                 repository.show(state)
@@ -245,6 +251,34 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
      */
     private fun containing(row: LogRow): List<String> =
         listOfNotNull(browsing?.name ?: currentBranchName().ifEmpty { null })
+
+    /**
+     * Naming the branches either side of a merge needs every branch's history,
+     * which the table itself does not. So it is done once in the background
+     * after the rows are already on screen, and cached against the tips.
+     */
+    private fun loadMergeLabels(root: Path?, branches: List<LoreBranch>) {
+        if (root == null || all.none { it.entry.isMerge }) return
+
+        val key = branches.joinToString(",") { "${it.name}@${it.latest.hex}" }
+        if (key == mergeKey) return
+        mergeKey = key
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val labels = runCatching {
+                LoreBranchWalks.mergeLabels(LoreBranchWalks.attribute(root, branches, HISTORY_LIMIT).attributed)
+            }
+                .onFailure { log.warn("Cannot resolve merge branches for $root", it) }
+                .getOrDefault(emptyMap())
+            if (labels.isEmpty()) return@executeOnPooledThread
+
+            ApplicationManager.getApplication().invokeLater {
+                mergeLabels = labels
+                all = all.map { it.copy(merged = labels[it.entry.revision.hex]) }
+                applyFilter(filter.filter ?: "")
+            }
+        }
+    }
 
     private fun currentBranchName(): String =
         LoreRootFinder.mappedRoots(project).firstOrNull()
@@ -281,7 +315,13 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             .mapValues { (_, names) -> names.distinct() }
 
         return history.map {
-            LogRow(root, it, it.number <= synced, tips[it.revision.hex].orEmpty())
+            LogRow(
+                root = root,
+                entry = it,
+                synced = it.number <= synced,
+                tips = tips[it.revision.hex].orEmpty(),
+                merged = mergeLabels[it.revision.hex],
+            )
         }
     }
 

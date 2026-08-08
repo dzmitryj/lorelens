@@ -23,6 +23,8 @@ data class LogRow(
     val synced: Boolean,
     /** Branches whose tip is this revision, rendered as chips on the row. */
     val tips: List<String> = emptyList(),
+    /** For a merge, the branch it pulled in and the branch it landed on. */
+    val merged: Pair<String, String>? = null,
 )
 
 /**
@@ -128,6 +130,14 @@ private class MessageColumn : LoreLogColumn(LoreLensBundle.message("log.column.m
     override fun getComparator(): Comparator<LogRow> = compareBy { it.entry.subject.orEmpty() }
 
     override fun ColoredTableCellRenderer.render(row: LogRow) {
+        // A merge says which branch went where, which the message often does not.
+        row.merged?.let { (from, into) ->
+            append(
+                "${LoreLensBundle.message("log.merged", from, into)}  ",
+                SimpleTextAttributes.GRAYED_BOLD_ATTRIBUTES,
+            )
+        }
+
         append(row.entry.subject.orEmpty(), attributes(row))
         row.entry.metadata.body?.let { body ->
             append("  ${body.lineSequence().first()}", SimpleTextAttributes.GRAYED_ATTRIBUTES)

@@ -44,7 +44,7 @@ class LoreBranchGraphLayoutTest {
                 revision("a", 1, "main"),
                 revision("s1", 2, "side", listOf("a")),
             ),
-            first = "main",
+            order = listOf("main", "side"),
         )
 
         assertEquals(listOf("main", "side"), graph.lanes)
@@ -64,7 +64,7 @@ class LoreBranchGraphLayoutTest {
                 revision("s1", 2, "side", listOf("a")),
                 revision("m", 3, "main", listOf("a", "s1")),
             ),
-            first = "main",
+            order = listOf("main", "side"),
         )
 
         val merge = graph.nodeAt("m")!!
@@ -75,15 +75,15 @@ class LoreBranchGraphLayoutTest {
         assertEquals("s1", crossing.single().from.hash)
     }
 
-    /** The checkout's branch reads first whatever its age. */
+    /** Lanes follow the hierarchy, not which branch happens to be checked out. */
     @Test
-    fun `the named branch takes the top lane`() {
+    fun `lanes take the order they are given`() {
         val graph = LoreBranchGraphLayout.layout(
             listOf(
                 revision("a", 1, "old"),
                 revision("b", 2, "young"),
             ),
-            first = "young",
+            order = listOf("young", "old"),
         )
 
         assertEquals(listOf("young", "old"), graph.lanes)

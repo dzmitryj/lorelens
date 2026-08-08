@@ -67,7 +67,7 @@ class LoreBranchGraphTab(private val project: Project) : ChangesViewContentProvi
     )
 
     override fun initTabContent(content: Content) {
-        val actions = DefaultActionGroup(RefreshAction())
+        val actions = DefaultActionGroup(RefreshAction(), ResetFocusAction())
 
         val split = OnePixelSplitter(true, "LoreLens.BranchGraph.Details", 0.72f).apply {
             firstComponent = graph
@@ -103,46 +103,15 @@ class LoreBranchGraphTab(private val project: Project) : ChangesViewContentProvi
             loadedKey = key
 
             val current = LoreRepositoryState.getInstance(project).of(path)?.branchName.orEmpty()
-            val collected = mutableMapOf<String, LoreHistoryEntry>()
 
-            val walks = found.distinctBy { it.name }.map { branch ->
-                val revisions = runCatching { LoreHistoryApi.history(path, HISTORY_LIMIT, branch = branch.name) }
-                    .onFailure { log.warn("Cannot read history for ${branch.name}", it) }
-                    .getOrDefault(emptyList())
-
-                revisions.forEach { collected.putIfAbsent(it.revision.hex, it) }
-
-                val branchPoint = branch.branchPoints
-                    .mapNotNull { point -> revisions.firstOrNull { it.revision.hex == point.revision.hex }?.number }
-                    .maxOrNull()
-                    ?: 0L
-
-                LoreBranchGraphLayout.Walk(
-                    branch = branch.name,
-                    branchPoint = branchPoint,
-                    revisions = revisions.map { entry ->
-                        LoreBranchGraphLayout.Input(
-                            hash = entry.revision.hex,
-                            number = entry.number,
-                            branch = branch.name,
-                            parents = entry.parents.map { it.hex },
-                            author = entry.author,
-                            isMerge = entry.isMerge,
-                        )
-                    },
-                )
-            }
-
-            val laid = LoreBranchGraphLayout.layout(
-                LoreBranchGraphLayout.attribute(walks),
-                first = current,
-                order = LoreBranchTree.order(found),
-            )
+            val walked = LoreBranchWalks.attribute(path, found, HISTORY_LIMIT)
+            val laid = LoreBranchGraphLayout.layout(walked.attributed, order = LoreBranchTree.order(found))
+            val head = LoreRepositoryState.getInstance(project).of(path)?.revision?.hex
 
             ApplicationManager.getApplication().invokeLater {
-                entries = collected
+                entries = walked.entries
                 lanes = laid.lanes
-                graph.show(laid, current)
+                graph.show(laid, current, head)
                 details.show(null, emptyList())
             }
         }
@@ -184,6 +153,16 @@ class LoreBranchGraphTab(private val project: Project) : ChangesViewContentProvi
                 false,
             )
             .show(RelativePoint(graph, at))
+    }
+
+    private inner class ResetFocusAction : AnAction(
+        LoreLensBundle.message("graph.reset"),
+        null,
+        AllIcons.General.FitContent,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) = graph.resetFocus()
     }
 
     private inner class RefreshAction :
