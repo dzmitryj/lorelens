@@ -1,11 +1,13 @@
 package com.dzmitryj.lorelens.update
 
 import com.dzmitryj.lorelens.LoreLensBundle
-import com.dzmitryj.lorelens.api.LoreSyncApi
+import com.dzmitryj.lorelens.LoreVcs
 import com.dzmitryj.lorelens.checkin.LorePaths
 import com.dzmitryj.lorelens.ffi.generated.RevisionSyncFileEvent
 import com.dzmitryj.lorelens.ffi.generated.RevisionSyncProgressEvent
+import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Ref
 import com.intellij.openapi.vcs.FilePath
 import com.intellij.openapi.vcs.VcsException
@@ -16,7 +18,7 @@ import com.intellij.openapi.vcs.update.UpdateSession
 import com.intellij.openapi.vcs.update.UpdateSessionAdapter
 import com.intellij.openapi.vcs.update.UpdatedFiles
 
-class LoreUpdateEnvironment : UpdateEnvironment {
+class LoreUpdateEnvironment(private val project: Project) : UpdateEnvironment {
 
     override fun fillGroups(updatedFiles: UpdatedFiles?) = Unit
 
@@ -33,20 +35,27 @@ class LoreUpdateEnvironment : UpdateEnvironment {
             progressIndicator.text = LoreLensBundle.message("update.progress", root.fileName ?: root)
 
             try {
-                LoreSyncApi.sync(root) { event ->
+                val outcome = LoreSyncSession.sync(root) { event ->
                     when (event) {
                         is RevisionSyncProgressEvent -> report(progressIndicator, event)
                         is RevisionSyncFileEvent ->
                             updatedFiles.getGroupById(FileGroup.UPDATED_ID)
-                                ?.add(root.resolve(event.path).toString(), com.dzmitryj.lorelens.LoreVcs.KEY, null)
+                                ?.add(root.resolve(event.path).toString(), LoreVcs.KEY, null)
                         else -> Unit
                     }
+                }
+                if (outcome.failed.isNotEmpty()) {
+                    exceptions += VcsException(
+                        LoreLensBundle.message("update.restage.failed", outcome.failed.joinToString(", ")),
+                        true,
+                    )
                 }
             } catch (e: RuntimeException) {
                 exceptions += VcsException(e)
             }
         }
 
+        LoreRepositoryState.getInstance(project).invalidateAll()
         return UpdateSessionAdapter(exceptions, false)
     }
 

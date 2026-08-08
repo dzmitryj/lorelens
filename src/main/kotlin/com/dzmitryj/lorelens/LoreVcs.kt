@@ -28,7 +28,7 @@ class LoreVcs(project: Project) : AbstractVcs(project, NAME) {
     private val checkinEnvironment = LoreCheckinEnvironment(project)
     private val rollbackEnvironment = LoreRollbackEnvironment(project)
     private val editFileProvider = LoreEditFileProvider(project)
-    private val updateEnvironment = LoreUpdateEnvironment()
+    private val updateEnvironment = LoreUpdateEnvironment(project)
     private val historyProvider = LoreHistoryProvider(project)
 
     override fun getDisplayName(): String = LoreLensBundle.message("vcs.name")
