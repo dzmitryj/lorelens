@@ -61,9 +61,8 @@ abstract class LoreLogColumn(name: String) : ColumnInfo<LogRow, LogRow>(name) {
         /** Room for the sort arrow and cell insets, which the string width misses. */
         const val PADDING = 24
 
-        val ALL: Array<ColumnInfo<LogRow, *>> = arrayOf(
-            RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn(),
-        )
+        fun columns(graph: ColumnInfo<LogRow, *>): Array<ColumnInfo<LogRow, *>> =
+            arrayOf(graph, RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn())
     }
 }
 
