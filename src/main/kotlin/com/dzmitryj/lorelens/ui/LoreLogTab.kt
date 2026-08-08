@@ -1,6 +1,7 @@
 package com.dzmitryj.lorelens.ui
 
 import com.dzmitryj.lorelens.LoreLensBundle
+import com.dzmitryj.lorelens.LoreVcs
 import com.dzmitryj.lorelens.api.LoreBranchApi
 import com.dzmitryj.lorelens.api.LoreDiffApi
 import com.dzmitryj.lorelens.api.LoreHistoryApi
@@ -23,13 +24,16 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.vcs.AbstractVcsHelper
 import com.intellij.openapi.vcs.FileStatus
 import com.intellij.openapi.vcs.LocalFilePath
 import com.intellij.openapi.vcs.changes.Change
@@ -44,10 +48,12 @@ import com.intellij.ui.PopupHandler
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.TableSpeedSearch
 import com.intellij.ui.components.JBLoadingPanel
+import com.intellij.ui.components.JBTabbedPane
 import com.intellij.ui.content.Content
 import com.intellij.ui.table.TableView
 import com.intellij.util.ui.ListTableModel
 import java.awt.BorderLayout
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseEvent
 import java.nio.file.Path
 import javax.swing.JPanel
@@ -86,6 +92,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     private var known: List<LoreBranch> = emptyList()
 
     private val details = LoreCommitDetailsPanel()
+    private val branchGraph = LoreBranchGraphPanel()
 
     /** Where this checkout sits, in the tab rather than only in the status bar. */
     private val repository = LoreRepositoryPanel(
@@ -130,11 +137,19 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
         val actions = DefaultActionGroup(
             RefreshAction(),
+            Separator.getInstance(),
             CompareRevisionsAction(),
             OpenAtRevisionAction(),
+            ShowFileHistoryAction(),
+            Separator.getInstance(),
             SyncToRevisionAction(),
             CompareWithWorkingCopyAction(),
             TakeFromBranchAction(),
+            Separator.getInstance(),
+            CopyRevisionAction(),
+            CopyMessageAction(),
+            Separator.getInstance(),
+            ActionManager.getInstance().getAction("LoreLens.FullRescan"),
         )
         PopupHandler.installRowSelectionTablePopup(table, actions, "LoreLensLog")
         object : DoubleClickListener() {
@@ -144,9 +159,14 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             }
         }.installOn(table)
 
-        val lower = OnePixelSplitter(false, "LoreLens.Log.Details", 0.65f).apply {
+        val preview = JBTabbedPane().apply {
+            addTab(LoreLensBundle.message("preview.details"), details)
+            addTab(LoreLensBundle.message("preview.graph"), branchGraph)
+        }
+
+        val lower = OnePixelSplitter(false, "LoreLens.Log.Details", 0.6f).apply {
             firstComponent = changes
-            secondComponent = details
+            secondComponent = preview
         }
 
         val splitter = OnePixelSplitter(true, "LoreLens.Log.Proportion", 0.6f).apply {
@@ -336,6 +356,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     private fun showChangedFiles() {
         val selected = table.selectedObjects.takeIf { it.size == 1 }?.single()
         details.show(selected, selected?.let { row -> row.tips.ifEmpty { containing(row) } }.orEmpty())
+        branchGraph.show(known, selected)
 
         val pair = selectedSpan()
         if (pair == null) {
@@ -477,6 +498,63 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             LoreCrossBranch.takeFromBranch(
                 project, root, relative, entry.revision, entry.number, browsing?.name.orEmpty(),
             )
+        }
+    }
+
+    private inner class CopyRevisionAction : AnAction(
+        LoreLensBundle.message("log.copy.revision"),
+        null,
+        com.intellij.icons.AllIcons.Actions.Copy,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = table.selectedObjects.size == 1
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val row = table.selectedObjects.singleOrNull() ?: return
+            CopyPasteManager.getInstance().setContents(StringSelection(row.entry.revision.hex))
+        }
+    }
+
+    private inner class CopyMessageAction : AnAction(
+        LoreLensBundle.message("log.copy.message"),
+        null,
+        com.intellij.icons.AllIcons.Actions.InlayRenameInComments,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = table.selectedObjects.size == 1
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val row = table.selectedObjects.singleOrNull() ?: return
+            CopyPasteManager.getInstance()
+                .setContents(StringSelection(row.entry.message ?: row.entry.subject.orEmpty()))
+        }
+    }
+
+    /** Opens the platform's own history view for the file selected below. */
+    private inner class ShowFileHistoryAction : AnAction(
+        LoreLensBundle.message("log.show.file.history"),
+        null,
+        com.intellij.icons.AllIcons.Vcs.History,
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = changes.selectedChanges.isNotEmpty()
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val vcs = LoreVcs.of(project) ?: return
+            val path = changes.selectedChanges.firstOrNull()
+                ?.let { it.afterRevision ?: it.beforeRevision }
+                ?.file
+                ?: return
+            AbstractVcsHelper.getInstance(project).showFileHistory(vcs.vcsHistoryProvider, path, vcs)
         }
     }
 
