@@ -45,20 +45,22 @@ object LoreStatusApi {
      * @param scan walks the filesystem and reconciles every path, which is
      *   O(repository). The IDE normally avoids it by marking edits dirty as
      *   they happen.
+     * @param staged reports the staged state. Dirty flags live there, so the
+     *   file list is empty without it -- but so is the cost, which is what
+     *   makes a revision-only query cheap.
      */
     fun status(
         root: Path,
         paths: List<String> = emptyList(),
         scan: Boolean = false,
         checkDirty: Boolean = false,
+        staged: Boolean = true,
     ): LoreRepositoryStatus = Arena.ofConfined().use { arena ->
         val args = LoreArgs(arena)
         val globals = args.globals(root)
         val options = arena.allocate(lore_repository_status_args_t.LAYOUT)
 
-        // Dirty flags are persisted in the staged state, so without this the
-        // report omits every file the IDE marked.
-        lore_repository_status_args_t.staged(options, 1)
+        lore_repository_status_args_t.staged(options, if (staged) 1 else 0)
         lore_repository_status_args_t.scan(options, if (scan) 1 else 0)
         lore_repository_status_args_t.check_dirty(options, if (checkDirty) 1 else 0)
         args.writeStrings(lore_repository_status_args_t.paths(options), paths)
@@ -75,6 +77,14 @@ object LoreStatusApi {
             files = result.filter<RepositoryStatusFileEvent>().map { it.toModel() },
         )
     }
+
+    /**
+     * Branch and head revision only. Everything that just needs to know where
+     * the repository is should use this rather than [status], which drags the
+     * whole staged set back across the boundary to be thrown away.
+     */
+    fun revisionStatus(root: Path): LoreRevisionStatus? =
+        status(root, staged = false).revision
 
     fun markDirty(root: Path, paths: List<String>) {
         if (paths.isEmpty()) return

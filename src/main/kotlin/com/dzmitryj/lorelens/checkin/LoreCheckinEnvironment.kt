@@ -3,6 +3,7 @@ package com.dzmitryj.lorelens.checkin
 import com.dzmitryj.lorelens.LoreLensBundle
 import com.dzmitryj.lorelens.api.LoreStatusApi
 import com.dzmitryj.lorelens.api.LoreWriteApi
+import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.vcs.CheckinProjectPanel
@@ -57,6 +58,7 @@ class LoreCheckinEnvironment(private val project: Project) : CheckinEnvironment 
             }
         }
 
+        LoreRepositoryState.getInstance(project).invalidateAll()
         VcsDirtyScopeManager.getInstance(project).markEverythingDirty()
         return exceptions
     }

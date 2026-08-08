@@ -1,8 +1,7 @@
 package com.dzmitryj.lorelens.changes
 
-import com.dzmitryj.lorelens.api.LoreStatusApi
+import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
-import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.FilePath
 import com.intellij.openapi.vcs.changes.ContentRevision
@@ -17,17 +16,10 @@ import com.intellij.vcsUtil.VcsUtil
  */
 class LoreDiffProvider(private val project: Project) : DiffProvider {
 
-    private val log = logger<LoreDiffProvider>()
-
     override fun getCurrentRevision(file: VirtualFile): VcsRevisionNumber? {
         val root = LoreRootFinder.findRoot(file) ?: return null
-        return try {
-            LoreStatusApi.status(root.toNioPath()).revision
-                ?.let { LoreRevisionNumber(it.revision, it.revisionNumber) }
-        } catch (e: RuntimeException) {
-            log.warn("Cannot read current revision for ${file.path}", e)
-            null
-        }
+        return LoreRepositoryState.getInstance(project).of(root.toNioPath())
+            ?.let { LoreRevisionNumber(it.revision, it.revisionNumber) }
     }
 
     override fun getLastRevision(filePath: FilePath): ItemLatestState? {
