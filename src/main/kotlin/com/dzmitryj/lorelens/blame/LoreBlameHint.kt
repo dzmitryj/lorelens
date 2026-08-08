@@ -14,6 +14,8 @@ import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.event.EditorMouseEvent
 import com.intellij.openapi.editor.event.EditorMouseMotionListener
 import com.intellij.openapi.editor.markup.TextAttributes
+import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -37,6 +39,7 @@ class LoreBlameHint(private val project: Project, private val editor: Editor) : 
     private val alarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, LoreBlameDisposable(editor))
     private var inlay: Inlay<*>? = null
     private var shownLine = -1
+    private var running: EmptyProgressIndicator? = null
 
     init {
         editor.addEditorMouseMotionListener(HoverListener())
@@ -63,12 +66,21 @@ class LoreBlameHint(private val project: Project, private val editor: Editor) : 
         val root = LoreRootFinder.findRoot(file) ?: return
         val relative = LoreRootFinder.relativePath(root, file) ?: return
 
-        // Blame walks history and diffs, so it never runs on the EDT.
+        // Blame walks history and diffs, so it never runs on the EDT. It runs
+        // under an indicator we own, because executeOnPooledThread installs
+        // none and the service's checkCanceled would otherwise do nothing --
+        // a superseded blame would run to completion in the background.
+        val indicator = EmptyProgressIndicator()
+        running?.cancel()
+        running = indicator
+
         ApplicationManager.getApplication().executeOnPooledThread {
-            val record = LoreBlameService.getInstance(project)
-                .blame(root.toNioPath(), relative)
-                ?.at(line)
-                ?: return@executeOnPooledThread
+            val record = runCatching {
+                ProgressManager.getInstance().runProcess<LoreHistoryRecord?>(
+                    { LoreBlameService.getInstance(project).blame(root.toNioPath(), relative)?.at(line) },
+                    indicator,
+                )
+            }.getOrNull() ?: return@executeOnPooledThread
 
             ApplicationManager.getApplication().invokeLater {
                 if (editor.isDisposed) return@invokeLater

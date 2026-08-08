@@ -65,8 +65,7 @@ class LoreBlameService(private val project: Project) {
         val ordered = history.reversed()
         val oldest = ordered.first()
 
-        var attribution: List<LoreHistoryRecord> =
-            lineCount(root, relativePath, oldest).let { count -> List(count) { oldest } }
+        var attribution: List<LoreHistoryRecord> = List(lineCount(root, relativePath, oldest)) { oldest }
 
         ordered.zipWithNext().forEach { (previous, next) ->
             ProgressManager.checkCanceled()
