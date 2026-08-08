@@ -47,5 +47,16 @@
         </action>
         <action id="ChangesView.Shelve" overrides="true" class="com.dzmitryj.lorelens.shelf.LoreAwareShelveAction"
                 icon="com.intellij.platform.vcs.impl.icons.PlatformVcsImplIcons.Shelve"/>
+
+        <group id="LoreLens.Conflicts" popup="false">
+            <action id="LoreLens.MarkResolved" class="com.dzmitryj.lorelens.merge.LoreMarkResolvedAction"/>
+            <action id="LoreLens.ResolveMine" class="com.dzmitryj.lorelens.merge.LoreResolveMineAction"/>
+            <action id="LoreLens.ResolveTheirs" class="com.dzmitryj.lorelens.merge.LoreResolveTheirsAction"/>
+            <action id="LoreLens.Unresolve" class="com.dzmitryj.lorelens.merge.LoreUnresolveAction"/>
+            <add-to-group group-id="ChangesViewPopupMenu" anchor="last"/>
+        </group>
+        <action id="LoreLens.AbortMerge" class="com.dzmitryj.lorelens.merge.LoreAbortMergeAction">
+            <add-to-group group-id="Vcs.Operations.Popup.VcsAware" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin>
