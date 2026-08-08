@@ -57,6 +57,9 @@ tasks.test {
     dependsOn(fetchLoreNative)
     systemProperty("lore.native.dir", loreNativeDir.get().asFile.absolutePath)
     systemProperty("lore.server.dir", loreServerDir.get().asFile.absolutePath)
+    listOf("lore.probe.repo", "lore.probe.file").forEach { key ->
+        providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
+    }
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
