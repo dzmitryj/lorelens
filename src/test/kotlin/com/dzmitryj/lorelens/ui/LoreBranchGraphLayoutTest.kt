@@ -156,4 +156,19 @@ class LoreBranchGraphLayoutTest {
         assertEquals(emptyList<String>(), graph.lanes)
         assertEquals(0, graph.columns)
     }
+
+    /** Plain timestamp order broke here: a parent's clock ran ahead. */
+    @Test
+    fun `a parent never sits right of its child`() {
+        val graph = LoreBranchGraphLayout.layout(
+            listOf(
+                revision("child", number = 2, branch = "main", parents = listOf("parent")).copy(timestamp = 1),
+                revision("parent", number = 1, branch = "main").copy(timestamp = 5),
+            ),
+            order = listOf("main"),
+        )
+
+        val columns = graph.nodes.associate { it.hash to it.column }
+        assertTrue(columns.getValue("parent") < columns.getValue("child"))
+    }
 }

@@ -105,8 +105,20 @@ class LoreBranchGraphTab(private val project: Project) : ChangesViewContentProvi
             val current = LoreRepositoryState.getInstance(project).of(path)?.branchName.orEmpty()
 
             val walked = LoreBranchWalks.attribute(path, found, HISTORY_LIMIT)
-            val laid = LoreBranchGraphLayout.layout(walked.attributed, order = LoreBranchTree.order(found))
             val head = LoreRepositoryState.getInstance(project).of(path)?.revision?.hex
+
+            // Synced is what the checkout reaches through the whole graph, the
+            // same rule History uses; the walks' own first-parent flag stays as
+            // the fallback when there is no checkout revision.
+            val parents = walked.entries.mapValues { (_, entry) -> entry.parents.map { it.hex } }
+            val sync = head?.let { LoreLogOrder.reachable(it, parents) }?.takeIf { it.isNotEmpty() }
+            val attributed = walked.attributed.map { input ->
+                if (sync == null) input else input.copy(synced = input.hash in sync)
+            }
+
+            val order = LoreBranchTree.order(found)
+            LoreBranchColours.assign(order)
+            val laid = LoreBranchGraphLayout.layout(attributed, order = order)
 
             ApplicationManager.getApplication().invokeLater {
                 entries = walked.entries

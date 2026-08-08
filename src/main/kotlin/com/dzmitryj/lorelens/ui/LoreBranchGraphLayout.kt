@@ -117,10 +117,10 @@ object LoreBranchGraphLayout {
     fun layout(revisions: List<Input>, order: List<String> = emptyList()): Graph {
         if (revisions.isEmpty()) return Graph(emptyList(), emptyList(), emptyList())
 
-        // Oldest first by time. Revision numbers restart per branch, so sorting
-        // by number would interleave unrelated branches at random.
-        val ordered = revisions.distinctBy { it.hash }
-            .sortedWith(compareBy({ it.timestamp }, { it.number }, { it.hash }))
+        // Oldest first, but a parent never sits right of its child: plain
+        // timestamp order breaks the moment one clock ran ahead. Time only
+        // breaks ties inside the topological order.
+        val ordered = LoreLogOrder.topological(revisions.distinctBy { it.hash }).reversed()
 
         val earliest = ordered.groupBy { it.branch }
             .mapValues { (_, all) -> all.first().timestamp }
