@@ -47,6 +47,13 @@
         </action>
         <action id="ChangesView.Shelve" overrides="true" class="com.dzmitryj.lorelens.shelf.LoreAwareShelveAction"
                 icon="com.intellij.platform.vcs.impl.icons.PlatformVcsImplIcons.Shelve"/>
+        <action id="ChangesView.ShelveSilently" overrides="true"
+                class="com.dzmitryj.lorelens.shelf.LoreAwareShelveSilentlyAction"
+                icon="AllIcons.Vcs.ShelveSilent">
+            <keyboard-shortcut first-keystroke="shift control H" keymap="$default"/>
+        </action>
+        <action id="ChangesView.SaveToShelve" overrides="true"
+                class="com.dzmitryj.lorelens.shelf.LoreAwareSaveToShelveAction"/>
 
         <group id="LoreLens.Conflicts" popup="false">
             <action id="LoreLens.MarkResolved" class="com.dzmitryj.lorelens.merge.LoreMarkResolvedAction"/>

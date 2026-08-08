@@ -29,7 +29,11 @@ class LoreAwareShelveAction : AbstractCommitChangesAction() {
         }
         super.update(e)
     }
-
-    private fun isLoreOnly(project: Project): Boolean =
-        ProjectLevelVcsManager.getInstance(project).getSingleVCS() is LoreVcs
 }
+
+/**
+ * True when Lore is the only VCS in play. Anything else means another VCS's
+ * project is using the action and it has to keep working.
+ */
+internal fun isLoreOnly(project: Project): Boolean =
+    ProjectLevelVcsManager.getInstance(project).getSingleVCS() is LoreVcs
