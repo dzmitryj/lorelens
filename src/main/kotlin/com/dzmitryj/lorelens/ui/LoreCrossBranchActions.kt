@@ -68,6 +68,7 @@ object LoreCrossBranch {
                     LoreLensBundle.message("branch.compare.theirs", branch, revisionNumber),
                     LoreLensBundle.message("branch.compare.mine"),
                 )
+                request.putUserData(com.intellij.diff.util.DiffUserDataKeys.PLACE, com.intellij.diff.util.DiffPlaces.CHANGES_VIEW)
                 DiffManager.getInstance().showDiff(project, request)
             }
         }

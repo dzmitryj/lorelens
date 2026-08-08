@@ -1,6 +1,9 @@
 package com.dzmitryj.lorelens.ui
 
 import com.dzmitryj.lorelens.changes.LoreRevisionNumber
+import com.intellij.diff.chains.DiffRequestChain
+import com.intellij.diff.util.DiffPlaces
+import com.intellij.diff.util.DiffUserDataKeys
 import com.intellij.diff.util.DiffUserDataKeysEx
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
@@ -17,6 +20,16 @@ import com.intellij.openapi.vcs.changes.ui.SimpleAsyncChangesBrowser
  */
 class LoreChangesBrowser(private val project: Project) :
     SimpleAsyncChangesBrowser(project, false, false) {
+
+    /**
+     * The viewer choice -- side by side or unified -- is persisted per place.
+     * Without one, every Lore diff landed in the anonymous bucket, where the
+     * choice neither stuck nor matched the IDE's own VCS diffs.
+     */
+    override fun updateDiffContext(chain: DiffRequestChain) {
+        super.updateDiffContext(chain)
+        chain.putUserData(DiffUserDataKeys.PLACE, DiffPlaces.CHANGES_VIEW)
+    }
 
     override fun getDiffRequestProducer(userObject: Any): ChangeDiffRequestChain.Producer? {
         val change = userObject as? Change ?: return super.getDiffRequestProducer(userObject)

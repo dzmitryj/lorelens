@@ -73,7 +73,10 @@ private class ShowRevisionDiffAction(
 
         val filePath = filePathOf(root, relativePath)
         val after = content(filePath, record) ?: return null
-        val before = previous?.let { content(filePath, it) } ?: DiffContentFactory.getInstance().createEmpty()
+        // An empty document rather than EmptyContent: the one-side viewer that
+        // EmptyContent forces has no side-by-side/unified switch at all.
+        val before = previous?.let { content(filePath, it) }
+            ?: DiffContentFactory.getInstance().create(project, "", filePath)
 
         return SimpleDiffRequest(
             "${filePath.name} (${previous?.let(::label) ?: NONE} → ${label(record)})",
@@ -81,7 +84,7 @@ private class ShowRevisionDiffAction(
             after,
             previous?.let(::label) ?: NONE,
             label(record),
-        )
+        ).also { it.putUserData(com.intellij.diff.util.DiffUserDataKeys.PLACE, com.intellij.diff.util.DiffPlaces.CHANGES_VIEW) }
     }
 
     private fun content(filePath: FilePath, at: LoreHistoryRecord): DiffContent? {
