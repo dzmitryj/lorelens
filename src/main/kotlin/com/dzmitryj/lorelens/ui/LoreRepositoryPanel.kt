@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.util.ui.JBUI
@@ -53,18 +54,40 @@ class LoreRepositoryPanel(
         val isBrowsing: Boolean get() = browsing != null
     }
 
-    private val line = SimpleColoredComponent().apply {
-        isOpaque = false
+    /**
+     * The branch name only. Making the whole bar clickable meant a control with
+     * no edges: nothing showed where it began or that it did anything.
+     */
+    private val branchChip = SimpleColoredComponent().apply {
+        isOpaque = true
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        border = JBUI.Borders.compound(
+            JBUI.Borders.customLine(JBColor.border(), 1),
+            JBUI.Borders.empty(1, 6),
+        )
     }
 
+    /** Everything after the chip, which is read-only text. */
+    private val line = SimpleColoredComponent().apply { isOpaque = false }
+
     private var state: State? = null
+    private var hovered = false
 
     init {
         border = JBUI.Borders.empty(2, 8)
 
-        line.addMouseListener(object : MouseAdapter() {
+        branchChip.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(event: MouseEvent) = showBranchPopup(event)
+
+            override fun mouseEntered(event: MouseEvent) {
+                hovered = true
+                repaintChip()
+            }
+
+            override fun mouseExited(event: MouseEvent) {
+                hovered = false
+                repaintChip()
+            }
         })
 
         val actions = DefaultActionGroup(
@@ -72,7 +95,14 @@ class LoreRepositoryPanel(
             PushAction(),
             ReturnToCurrentAction(),
         )
-        add(line, BorderLayout.CENTER)
+        add(
+            JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0)).apply {
+                isOpaque = false
+                add(branchChip)
+                add(line)
+            },
+            BorderLayout.CENTER,
+        )
         add(
             JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
                 isOpaque = false
@@ -90,26 +120,30 @@ class LoreRepositoryPanel(
     fun show(state: State?) {
         this.state = state
         line.clear()
+        branchChip.clear()
 
         if (state == null) {
+            branchChip.isVisible = false
             line.append(LoreLensBundle.message("repo.none"), SimpleTextAttributes.GRAYED_ATTRIBUTES)
             return
         }
 
-        line.icon = AllIcons.Vcs.Branch
+        branchChip.isVisible = true
+        branchChip.icon = AllIcons.Vcs.Branch
+        branchChip.append(state.browsing ?: state.branch, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+        branchChip.append("  ▾", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+        repaintChip()
 
         if (state.isBrowsing) {
-            line.append(state.browsing.orEmpty(), SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
             line.append(
-                "   ${LoreLensBundle.message("repo.browsing", state.branch)}",
+                LoreLensBundle.message("repo.browsing", state.branch),
                 SimpleTextAttributes.GRAYED_ITALIC_ATTRIBUTES,
             )
             return
         }
 
-        line.append(state.branch, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
         line.append(
-            "  ${LoreLensBundle.message("repo.at", state.localRevision, state.localHash?.short.orEmpty())}",
+            LoreLensBundle.message("repo.at", state.localRevision, state.localHash?.short.orEmpty()),
             SimpleTextAttributes.REGULAR_ATTRIBUTES,
         )
 
@@ -146,6 +180,12 @@ class LoreRepositoryPanel(
                 SimpleTextAttributes.GRAYED_ATTRIBUTES,
             )
         }
+    }
+
+    private fun repaintChip() {
+        branchChip.background =
+            if (hovered) JBUI.CurrentTheme.ActionButton.hoverBackground() else background
+        branchChip.repaint()
     }
 
     /**

@@ -29,7 +29,6 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vcs.FileStatus
 import com.intellij.openapi.vcs.LocalFilePath
@@ -51,7 +50,6 @@ import com.intellij.util.ui.ListTableModel
 import java.awt.BorderLayout
 import java.awt.event.MouseEvent
 import java.nio.file.Path
-import javax.swing.DefaultComboBoxModel
 import javax.swing.JPanel
 import javax.swing.ListSelectionModel
 
@@ -63,7 +61,12 @@ import javax.swing.ListSelectionModel
 class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private val log = logger<LoreLogTab>()
-    private val model = ListTableModel(LoreLogColumn.ALL, emptyList<LogRow>())
+    private var graphRows: List<LoreGraphLayout.Row> = emptyList()
+
+    private val model = ListTableModel(
+        LoreLogColumn.columns(LoreGraphColumn { graphRows }),
+        emptyList<LogRow>(),
+    )
     private val table = TableView(model)
 
     private lateinit var changes: LoreChangesBrowser
@@ -76,7 +79,6 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     // After `all`, which its filter callback reads.
     private val filter = LogFilter()
-    private val branches = ComboBox(DefaultComboBoxModel(arrayOf(CURRENT_BRANCH)))
 
     /** Non-null while looking at a branch this checkout is not on. */
     private var browsing: LoreBranch? = null
@@ -120,17 +122,6 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             emptyText.text = LoreLensBundle.message("log.empty")
         }
         TableSpeedSearch.installOn(table)
-
-        branches.addActionListener {
-            val selected = branches.selectedItem as? String ?: return@addActionListener
-            val chosen = if (selected == CURRENT_BRANCH) "" else selected
-            if (chosen == branch) return@addActionListener
-            branch = chosen
-            // The combo and the header are one state, so picking here counts as
-            // browsing unless it lands back on the branch the checkout is on.
-            browsing = known.firstOrNull { it.name == chosen && chosen != currentBranchName() }
-            refresh()
-        }
 
         changes = LoreChangesBrowser(project)
         table.selectionModel.addListSelectionListener { event ->
@@ -177,13 +168,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                             .component,
                         BorderLayout.WEST,
                     )
-                    add(
-                        JPanel(BorderLayout()).apply {
-                            add(branches, BorderLayout.WEST)
-                            add(filter, BorderLayout.EAST)
-                        },
-                        BorderLayout.EAST,
-                    )
+                    add(filter, BorderLayout.EAST)
                 },
                 BorderLayout.NORTH,
             )
@@ -216,7 +201,6 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             ApplicationManager.getApplication().invokeLater {
                 all = entries
                 known = found
-                showBranches(names)
                 applyFilter(filter.filter ?: "")
                 table.updateColumnSizes()
                 repository.show(state)
@@ -321,27 +305,26 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
         }.queue()
     }
 
-    /** Rebuilt in place, so reselecting must not fire another refresh. */
-    private fun showBranches(names: List<String>) {
-        val wanted = branch.ifEmpty { CURRENT_BRANCH }
-        val items = listOf(CURRENT_BRANCH) + names
-        if ((0 until branches.itemCount).map(branches::getItemAt) == items) return
-
-        val listeners = branches.actionListeners
-        listeners.forEach(branches::removeActionListener)
-        branches.model = DefaultComboBoxModel(items.toTypedArray())
-        branches.selectedItem = if (wanted in items) wanted else CURRENT_BRANCH
-        listeners.forEach(branches::addActionListener)
-    }
-
     private fun applyFilter(text: String) {
         val needle = text.trim().lowercase()
-        model.items = if (needle.isEmpty()) all else all.filter { row ->
+        setRows(if (needle.isEmpty()) all else all.filter { row ->
             val entry = row.entry
             entry.subject.orEmpty().lowercase().contains(needle) ||
                 entry.author.orEmpty().lowercase().contains(needle) ||
                 entry.number.toString().contains(needle)
-        }
+        })
+    }
+
+    /**
+     * The graph is laid out for exactly the rows on screen: filtering changes
+     * which revisions are visible, and lanes drawn for hidden ones would point
+     * at nothing.
+     */
+    private fun setRows(rows: List<LogRow>) {
+        graphRows = LoreGraphLayout.layout(
+            rows.map { it.entry.revision.hex to it.entry.parents.map { parent -> parent.hex } },
+        )
+        model.items = rows
     }
 
     /**
@@ -573,6 +556,5 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private companion object {
         const val HISTORY_LIMIT = 200
-        val CURRENT_BRANCH: String = LoreLensBundle.message("log.branch.current")
     }
 }
