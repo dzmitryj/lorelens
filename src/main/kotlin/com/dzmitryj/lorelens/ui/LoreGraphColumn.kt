@@ -102,25 +102,53 @@ class LoreGraphColumn(
 
             // Half a cell at a time: the top edge down to the node, then the
             // node down to the bottom edge. Both halves land on the boundary,
-            // which is what keeps the line whole from row to row.
-            fun strand(segment: LoreHistoryLanes.Segment, from: Double, to: Double) {
+            // which is what keeps the line whole from row to row. Lane changes
+            // are straight runs with one rounded corner, the same shape the
+            // branch graph draws, rather than a full-height curve.
+            fun vertical(at: Double, from: Double, to: Double) =
+                g2.drawLine(at.toInt(), from.toInt(), at.toInt(), to.toInt())
+
+            model.incoming.forEach { segment ->
                 g2.color = laneColour(segment.colour)
                 val start = x(segment.from)
                 val end = x(segment.to)
                 if (start == end) {
-                    g2.drawLine(start.toInt(), from.toInt(), start.toInt(), to.toInt())
-                    return
+                    vertical(start, 0.0, middle.toDouble())
+                    return@forEach
                 }
 
-                val bend = from + (to - from) / 2
+                // Down the incoming lane, one rounded turn, horizontally into
+                // the node at its centre line.
+                val corner = corner(start, end, middle.toDouble())
+                val towards = if (end > start) corner else -corner
                 val path = Path2D.Double()
-                path.moveTo(start, from)
-                path.curveTo(start, bend, end, bend, end, to)
+                path.moveTo(start, 0.0)
+                path.lineTo(start, middle - corner)
+                path.quadTo(start, middle.toDouble(), start + towards, middle.toDouble())
+                path.lineTo(end, middle.toDouble())
                 g2.draw(path)
             }
 
-            model.incoming.forEach { strand(it, 0.0, middle.toDouble()) }
-            model.outgoing.forEach { strand(it, middle.toDouble(), height.toDouble()) }
+            model.outgoing.forEach { segment ->
+                g2.color = laneColour(segment.colour)
+                val start = x(segment.from)
+                val end = x(segment.to)
+                if (start == end) {
+                    vertical(start, middle.toDouble(), height.toDouble())
+                    return@forEach
+                }
+
+                // Horizontally out of the node, one rounded turn, down the
+                // parent's lane to the bottom edge.
+                val corner = corner(start, end, (height - middle).toDouble())
+                val towards = if (end > start) corner else -corner
+                val path = Path2D.Double()
+                path.moveTo(start, middle.toDouble())
+                path.lineTo(end - towards, middle.toDouble())
+                path.quadTo(end, middle.toDouble(), end, middle + corner)
+                path.lineTo(end, height.toDouble())
+                g2.draw(path)
+            }
 
             val centre = lane / 2 + model.lane * lane
             val radius = JBUI.scale(NODE)
@@ -145,6 +173,10 @@ class LoreGraphColumn(
         }
 
         private fun laneColour(lane: Int): Color = LANE_COLOURS[lane % LANE_COLOURS.size]
+
+        /** As round as the room between the lanes and the row edge allows. */
+        private fun corner(start: Double, end: Double, room: Double): Double =
+            minOf(JBUI.scale(5).toDouble(), Math.abs(end - start) / 2, room)
     }
 
     private companion object {
