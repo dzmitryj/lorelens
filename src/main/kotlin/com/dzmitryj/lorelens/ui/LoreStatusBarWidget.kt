@@ -1,8 +1,8 @@
 package com.dzmitryj.lorelens.ui
 
 import com.dzmitryj.lorelens.LoreLensBundle
-import com.dzmitryj.lorelens.api.LoreStatusApi
 import com.dzmitryj.lorelens.lock.LoreLockService
+import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
@@ -39,29 +39,32 @@ class LoreStatusBarWidget(project: Project) : EditorBasedStatusBarPopup(project,
 
     override fun ID(): String = WIDGET_ID
 
+    /**
+     * Runs on every editor switch, so it reads the cached revision rather than
+     * asking Lore each time. Hidden only when there is no Lore root at all: a
+     * failed read leaves the widget in place showing what it last knew.
+     */
     override fun getWidgetState(file: com.intellij.openapi.vfs.VirtualFile?): WidgetState {
         val root = LoreRootFinder.mappedRoots(project).firstOrNull() ?: return WidgetState.HIDDEN
+        val status = LoreRepositoryState.getInstance(project).of(root.toNioPath())
+            ?: return WidgetState(
+                LoreLensBundle.message("widget.name"),
+                LoreLensBundle.message("widget.unknown"),
+                false,
+            )
 
-        return try {
-            val status = LoreStatusApi.status(root.toNioPath(), scan = false).revision
-                ?: return WidgetState.HIDDEN
-            val held = LoreLockService.getInstance(project).heldByMe()
-
-            val text = buildString {
-                append(status.branchName)
-                append(" @").append(status.revisionNumber)
-                if (held > 0) append("  ").append(LoreLensBundle.message("widget.locks", held))
-            }
-            WidgetState(LoreLensBundle.message("widget.tooltip", status.revision.short), text, true)
-        } catch (e: RuntimeException) {
-            WidgetState.HIDDEN
+        val held = LoreLockService.getInstance(project).heldByMe()
+        val text = buildString {
+            append(status.branchName)
+            append(" @").append(status.revisionNumber)
+            if (held > 0) append("  ").append(LoreLensBundle.message("widget.locks", held))
         }
+        return WidgetState(LoreLensBundle.message("widget.tooltip", status.revision.short), text, true)
     }
 
     override fun createPopup(context: DataContext): ListPopup? {
         val root = LoreRootFinder.mappedRoots(project).firstOrNull() ?: return null
-        val status = runCatching { LoreStatusApi.status(root.toNioPath(), scan = false).revision }
-            .getOrNull() ?: return null
+        val status = LoreRepositoryState.getInstance(project).of(root.toNioPath()) ?: return null
 
         val group = DefaultActionGroup().apply {
             val held = LoreLockService.getInstance(project).heldByMe()

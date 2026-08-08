@@ -14,6 +14,7 @@
         <vfs.asyncListener implementation="com.dzmitryj.lorelens.dirty.LoreAsyncFileListener"/>
         <editorFactoryListener implementation="com.dzmitryj.lorelens.blame.LoreBlameEditorListener"/>
         <postStartupActivity implementation="com.dzmitryj.lorelens.repo.LoreMappingMigration"/>
+        <postStartupActivity implementation="com.dzmitryj.lorelens.ui.LoreWidgetAvailability"/>
         <postStartupActivity implementation="com.dzmitryj.lorelens.dirty.LoreStartupRescan"/>
         <notificationGroup id="LoreLens" displayType="BALLOON" bundle="messages.LoreLensBundle" key="vcs.name"/>
         <editorNotificationProvider implementation="com.dzmitryj.lorelens.lock.LoreLockBanner"/>
