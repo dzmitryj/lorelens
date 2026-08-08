@@ -1,6 +1,7 @@
 package com.dzmitryj.lorelens.dirty
 
 import com.dzmitryj.lorelens.repo.LORE_DIRECTORY
+import com.dzmitryj.lorelens.repo.LoreRepositoryState
 import com.dzmitryj.lorelens.repo.LoreRootFinder
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.vfs.AsyncFileListener
@@ -21,18 +22,30 @@ import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 class LoreAsyncFileListener : AsyncFileListener {
 
     override fun prepareChange(events: List<VFileEvent>): AsyncFileListener.ChangeApplier? {
-        if (!LoreDirtySettings.getInstance().markEditsDirty) return null
-
         val projects = ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }
         if (projects.isEmpty()) return null
 
-        val touched = events.mapNotNull(::fileOf).filter(::isTracked)
-        if (touched.isEmpty()) return null
+        // A repository appearing or disappearing invalidates cached root lookups,
+        // and anything written under .lore means the head revision may have moved.
+        val administrative = events.any { it.path.contains("/$LORE_DIRECTORY") }
+
+        val touched = if (LoreDirtySettings.getInstance().markEditsDirty) {
+            events.mapNotNull(::fileOf).filter(::isTracked)
+        } else {
+            emptyList()
+        }
+        if (!administrative && touched.isEmpty()) return null
 
         return object : AsyncFileListener.ChangeApplier {
             override fun afterVfsChange() {
+                if (administrative) {
+                    LoreRootFinder.clearCache()
+                    projects.forEach { LoreRepositoryState.getInstance(it).invalidateAll() }
+                }
                 projects.forEach { project ->
-                    LoreDirtyMarkQueue.getInstance(project).enqueue(touched)
+                    if (touched.isNotEmpty()) {
+                        LoreDirtyMarkQueue.getInstance(project).enqueue(touched)
+                    }
                 }
             }
         }
