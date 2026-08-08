@@ -57,20 +57,21 @@ class LoreChangeProvider(private val project: Project) : ChangeProvider {
         val scoped = scopedPaths(root, dirtyScope)
 
         try {
-            // A scope covering the whole root, or the first refresh after
-            // opening, has nothing useful to narrow by, so reconcile instead.
-            val full = scoped == null
-            if (!full && scoped!!.isEmpty()) return
-
-            if (!full) {
-                LoreStatusApi.markDirty(rootPath, scoped!!)
+            // Null scope means "the whole root", which happens on every VCS
+            // activation. Reporting the recorded dirty set answers that without
+            // a filesystem walk -- reconciling is O(repository) and belongs to
+            // the initial scan and to Full Rescan, which own that cost and show
+            // progress for it.
+            if (scoped != null) {
+                if (scoped.isEmpty()) return
+                LoreStatusApi.markDirty(rootPath, scoped)
             }
+            val whole = scoped == null
 
             val status = LoreStatusApi.status(
                 root = rootPath,
                 paths = scoped.orEmpty(),
-                scan = full,
-                checkDirty = !full,
+                checkDirty = !whole,
             )
 
             val revision = status.revision?.let {
@@ -87,7 +88,7 @@ class LoreChangeProvider(private val project: Project) : ChangeProvider {
         }
     }
 
-    /** Null means "no useful narrowing, reconcile the whole root". */
+    /** Null means the scope covers the whole root. */
     private fun scopedPaths(root: VirtualFile, dirtyScope: VcsDirtyScope): List<String>? {
         val recursive = dirtyScope.recursivelyDirtyDirectories
         if (recursive.any { it.virtualFile == root || it.path == root.path }) return null
