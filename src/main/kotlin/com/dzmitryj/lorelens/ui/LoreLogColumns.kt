@@ -62,7 +62,7 @@ abstract class LoreLogColumn(name: String) : ColumnInfo<LogRow, LogRow>(name) {
         const val PADDING = 24
 
         fun columns(graph: ColumnInfo<LogRow, *>): Array<ColumnInfo<LogRow, *>> =
-            arrayOf(graph, RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn())
+            arrayOf(RefColumn(), graph, RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn())
     }
 }
 
@@ -128,28 +128,31 @@ private class MessageColumn : LoreLogColumn(LoreLensBundle.message("log.column.m
     override fun getComparator(): Comparator<LogRow> = compareBy { it.entry.subject.orEmpty() }
 
     override fun ColoredTableCellRenderer.render(row: LogRow) {
-        // Chips first, as the Log does, so the eye finds the branch before the
-        // message rather than hunting for it at the end of a long subject.
-        row.tips.forEach { name ->
-            append(" $name ", CHIP)
-            append(" ", SimpleTextAttributes.REGULAR_ATTRIBUTES)
-        }
-
-        if (row.entry.isMerge) {
-            append(
-                "${LoreLensBundle.message("log.merge")} ",
-                SimpleTextAttributes.GRAYED_BOLD_ATTRIBUTES,
-            )
-        }
-
         append(row.entry.subject.orEmpty(), attributes(row))
         row.entry.metadata.body?.let { body ->
             append("  ${body.lineSequence().first()}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
         }
     }
+}
+
+/**
+ * Branch labels in a column of their own rather than buried at the head of the
+ * message, which is where the eye has to hunt for them.
+ */
+private class RefColumn : LoreLogColumn(LoreLensBundle.message("log.column.refs")) {
+
+    override fun getMaxStringValue(): String = " dev-dicenzo  dev-alberto "
+
+    override fun getAdditionalWidth(): Int = PADDING
+
+    override fun ColoredTableCellRenderer.render(row: LogRow) {
+        row.tips.forEach { name ->
+            append(" $name ", CHIP)
+            append(" ", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+        }
+    }
 
     private companion object {
-        /** A branch label, painted like the Log's rather than spelled out. */
         val CHIP = SimpleTextAttributes(
             JBColor(0xD5E8D4, 0x39503B),
             JBColor.foreground(),
