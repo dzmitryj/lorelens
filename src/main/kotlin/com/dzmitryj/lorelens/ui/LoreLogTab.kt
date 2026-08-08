@@ -50,6 +50,7 @@ import com.intellij.ui.TableSpeedSearch
 import com.intellij.ui.components.JBLoadingPanel
 import com.intellij.ui.content.Content
 import com.intellij.ui.table.TableView
+import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.ListTableModel
 import java.awt.BorderLayout
 import java.awt.datatransfer.StringSelection
@@ -136,6 +137,9 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
     override fun initTabContent(content: Content) {
         table.apply {
             setShowGrid(false)
+            // Room around the graph nodes; at the default height the circles of
+            // adjacent rows all but touch.
+            rowHeight = JBUI.scale(26)
             // Two rows can be selected to compare them.
             selectionModel.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
             emptyText.text = LoreLensBundle.message("log.empty")

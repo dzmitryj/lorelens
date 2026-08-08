@@ -42,7 +42,7 @@ class LoreGraphColumn(
             measured = laid
             lanes = (laid.maxOfOrNull { it.width } ?: 1).coerceIn(1, LoreHistoryLanes.MAX_LANES)
         }
-        return JBUI.scale(LANE * lanes + PAD)
+        return JBUI.scale(LANE * lanes + MARGIN * 2)
     }
 
     // One component, reconfigured per cell. A renderer that allocates is a
@@ -91,7 +91,9 @@ class LoreGraphColumn(
             val lane = JBUI.scale(LANE)
             val middle = height / 2
 
-            fun x(at: Int) = (lane / 2 + at * lane).toDouble()
+            // A margin either side, so the first and last lanes' nodes are not
+            // pressed against the column edges.
+            fun x(at: Int) = (JBUI.scale(MARGIN) + lane / 2 + at * lane).toDouble()
 
             // A strand crossing the row untouched. Drawn edge to edge, so it
             // meets the same lane in the rows above and below.
@@ -150,7 +152,7 @@ class LoreGraphColumn(
                 g2.draw(path)
             }
 
-            val centre = lane / 2 + model.lane * lane
+            val centre = x(model.lane).toInt()
             val radius = JBUI.scale(NODE)
 
             g2.color = LoreAuthorColours.colourOf(author)
@@ -181,7 +183,7 @@ class LoreGraphColumn(
 
     private companion object {
         const val LANE = 20
-        const val PAD = 10
+        const val MARGIN = 8
         const val NODE = 7
 
         val LANE_COLOURS: List<Color> = listOf(
