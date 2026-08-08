@@ -1,27 +1,25 @@
 package com.dzmitryj.lorelens.ui
 
 /**
- * Lanes for the History column.
+ * Lanes for the History column, one per branch.
  *
- * Walks the rows newest first holding a lane per open strand: a lane remembers
- * the hash it is waiting for, a row takes the lane waiting for it, and its
- * first parent keeps that lane. Merges converge the lanes waiting on them and
- * open a lane per extra parent.
- *
- * Every segment is emitted against the row it crosses, so consecutive rows join
- * up by construction. The previous model drew a lane once from its first row to
- * its last and left the line in pieces wherever a row had no node on it.
+ * A lane is a branch, for the whole view: every revision sits in its branch's
+ * lane, and the lane's colour is the branch's colour everywhere it appears.
+ * The first-free-slot model reused lanes as strands opened and closed, so the
+ * same branch wandered across columns and a merge said nothing about who
+ * merged into whom; here the direction is the picture -- an edge between two
+ * branches runs down the deeper branch's lane and curves into the other end.
  *
  * Pure: no Swing, so the arithmetic is testable.
  */
 object LoreHistoryLanes {
 
-    /** A revision in display order, newest first. */
-    data class Input(val hash: String, val parents: List<String>)
+    /** A revision in display order, newest first, children before parents. */
+    data class Input(val hash: String, val parents: List<String>, val branch: String?)
 
     /** A line within one row, running between lane [from] and lane [to]. */
     data class Segment(val from: Int, val to: Int) {
-        /** The lane a turn is named after is the outer one, as in any commit graph. */
+        /** An edge is named after its deeper branch: the one it belongs to. */
         val colour: Int get() = maxOf(from, to)
     }
 
@@ -40,63 +38,65 @@ object LoreHistoryLanes {
         val width: Int,
     )
 
-    fun layout(rows: List<Input>, maxLanes: Int = MAX_LANES): List<Row> {
+    /**
+     * @param order branch names in hierarchy order -- main first, children
+     *   after their parents -- which fixes each branch's lane and colour.
+     */
+    fun layout(rows: List<Input>, order: List<String>, maxLanes: Int = MAX_LANES): List<Row> {
         if (rows.isEmpty()) return emptyList()
 
-        // A parent outside the window would hold a lane open to the bottom of
-        // the table for a line that never arrives, so only what is on screen
-        // keeps a lane.
-        val known = rows.mapTo(HashSet()) { it.hash }
+        val rank = order.withIndex().associate { (index, name) -> name to index }
+        // Only branches actually on screen take lanes, so one busy branch does
+        // not push everything else past the cap.
+        val present = rows.mapNotNull { row -> row.branch?.let { rank[it] } }.distinct().sorted()
+        val laneOf = present.withIndex().associate { (lane, r) -> r to lane }
+        fun laneOf(branch: String?): Int =
+            (rank[branch]?.let { laneOf[it] } ?: 0).coerceAtMost(maxLanes - 1)
 
-        // Lane to the hash it is waiting for; null is free.
-        val open = ArrayList<String?>()
+        val lanes = rows.map { laneOf(it.branch) }
+        val indexOf = rows.withIndex().associate { (index, row) -> row.hash to index }
 
-        fun claim(hash: String?): Int {
-            val free = open.indexOfFirst { it == null }
-            val lane = when {
-                free >= 0 -> free
-                open.size < maxLanes -> open.size.also { open.add(null) }
-                // Past the cap the graph stops being readable; strands fold into
-                // the last lane rather than growing a column nobody can follow.
-                else -> maxLanes - 1
+        val incoming = List(rows.size) { mutableListOf<Segment>() }
+        val outgoing = List(rows.size) { mutableListOf<Segment>() }
+        val through = List(rows.size) { sortedSetOf<Int>() }
+
+        rows.forEachIndexed { child, row ->
+            row.parents.forEach { hash ->
+                val parent = indexOf[hash] ?: return@forEach
+                // Children sit above parents; anything else is broken input,
+                // and half an edge would be drawn pointing at nothing.
+                if (parent <= child) return@forEach
+
+                val edge = maxOf(lanes[child], lanes[parent])
+                outgoing[child] += Segment(lanes[child], edge)
+                incoming[parent] += Segment(edge, lanes[parent])
+                (child + 1 until parent).forEach { mid ->
+                    if (lanes[mid] == edge) {
+                        // The edge passes a revision sitting in its lane: it has
+                        // to thread through the node, or the line breaks there.
+                        incoming[mid] += Segment(edge, edge)
+                        outgoing[mid] += Segment(edge, edge)
+                    } else {
+                        through[mid] += edge
+                    }
+                }
             }
-            open[lane] = hash
-            return lane
         }
 
-        return rows.map { row ->
-            val waiting = open.indices.filter { open[it] == row.hash }
-            waiting.forEach { open[it] = null }
-
-            // RESERVED keeps the lane out of the free list until the parent is
-            // known, so an extra parent cannot be handed the node's own lane.
-            val lane = waiting.firstOrNull()?.also { open[it] = RESERVED } ?: claim(RESERVED)
-
-            val incoming = waiting.map { Segment(it, lane) }
-            val through = open.indices.filter { it != lane && open[it] != null }
-
-            val first = row.parents.firstOrNull()?.takeIf { it in known }
-            open[lane] = first
-
-            val outgoing = mutableListOf<Segment>()
-            if (first != null) outgoing += Segment(lane, lane)
-            row.parents.drop(1)
-                .filter { it in known }
-                .forEach { parent -> outgoing += Segment(lane, claim(parent)) }
-
-            val used = through + incoming.map { it.from } + outgoing.map { it.to } + lane
+        return rows.indices.map { index ->
+            val ins = incoming[index].distinct()
+            val outs = outgoing[index].distinct()
+            val crossing = through[index].toList()
+            val used = crossing + ins.map { it.from } + outs.map { it.to } + lanes[index]
             Row(
-                lane = lane,
-                incoming = incoming,
-                outgoing = outgoing,
-                through = through,
+                lane = lanes[index],
+                incoming = ins,
+                outgoing = outs,
+                through = crossing,
                 width = used.max() + 1,
             )
         }
     }
-
-    /** Not a hash: nothing can be waiting for it, so no lane can match it. */
-    private const val RESERVED = ""
 
     const val MAX_LANES = 8
 }

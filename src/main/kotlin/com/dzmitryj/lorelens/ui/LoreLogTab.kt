@@ -12,6 +12,7 @@ import com.dzmitryj.lorelens.changes.LoreRevisionNumber
 import com.dzmitryj.lorelens.lock.LoreLockService
 import com.dzmitryj.lorelens.model.LoreBranch
 import com.dzmitryj.lorelens.model.LoreBranchLocation
+import com.dzmitryj.lorelens.model.LoreBranchTree
 import com.dzmitryj.lorelens.model.LoreFileAction
 import com.dzmitryj.lorelens.model.LoreRevisionChain
 import com.dzmitryj.lorelens.repo.LoreBranchSwitcher
@@ -81,6 +82,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 rows = { graphRows },
                 authorOf = { index -> visible.getOrNull(index)?.entry?.author },
                 isMerge = { index -> visible.getOrNull(index)?.entry?.isMerge == true },
+                isHere = { index -> visible.getOrNull(index)?.here == true },
             ),
             rows = { visible },
             laneOf = { row -> laneByHash[row.entry.revision.hex] },
@@ -362,6 +364,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                         root = root,
                         entry = entry,
                         synced = sync == null || input.hash in sync,
+                        here = input.hash == state?.revision?.hex,
                         tips = tips[input.hash].orEmpty(),
                         merged = labels[input.hash],
                         branch = input.branch,
@@ -406,6 +409,7 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 root = root,
                 entry = it,
                 synced = here == null || it.revision.hex in here,
+                here = it.revision.hex == state?.revision?.hex,
                 tips = tips[it.revision.hex].orEmpty(),
                 merged = mergeLabels[it.revision.hex],
             )
@@ -478,8 +482,10 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
                 LoreHistoryLanes.Input(
                     hash = it.entry.revision.hex,
                     parents = it.entry.parents.map { parent -> parent.hex },
+                    branch = it.branch,
                 )
             },
+            order = LoreBranchTree.order(known),
         )
         laneByHash = rows.withIndex().associate { (index, row) ->
             row.entry.revision.hex to graphRows[index].lane
