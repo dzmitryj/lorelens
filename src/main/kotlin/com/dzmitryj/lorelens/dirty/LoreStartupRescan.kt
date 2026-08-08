@@ -28,6 +28,9 @@ class LoreStartupRescan : ProjectActivity {
     override suspend fun execute(project: Project) {
         val roots = LoreRootFinder.mappedRoots(project)
         if (roots.isEmpty()) return
+        // Global, cheap, idempotent; done here because this is the first code
+        // that runs only when a Lore repository is actually mapped.
+        com.dzmitryj.lorelens.ui.LoreDebugLogging.applyPersisted()
 
         val settings = LoreDirtySettings.getInstance()
         val pending = roots.mapNotNull { root ->

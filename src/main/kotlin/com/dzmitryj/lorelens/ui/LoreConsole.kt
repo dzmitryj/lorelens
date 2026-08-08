@@ -99,7 +99,7 @@ class LoreConsoleTab(private val project: Project) : ChangesViewContentProvider 
         }
         log.subscribe(listener).forEach { console.print(render(it), typeOf(it.kind)) }
 
-        val actions = DefaultActionGroup(ClearAction(console, log), VerboseAction(log))
+        val actions = DefaultActionGroup(ClearAction(console, log), VerboseAction(log), DebugAction(log))
 
         content.component = JPanel(BorderLayout()).apply {
             add(
@@ -144,6 +144,26 @@ class LoreConsoleTab(private val project: Project) : ChangesViewContentProvider 
         override fun isSelected(e: AnActionEvent): Boolean = log.isVerbose
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
+            log.isVerbose = state
+        }
+    }
+
+    /**
+     * liblore's own rolling debug log plus verbose console output. Persisted:
+     * a session being debugged stays debugged across restarts.
+     */
+    private class DebugAction(private val log: LoreConsoleLog) :
+        com.intellij.openapi.actionSystem.ToggleAction(
+            LoreLensBundle.message("console.debug"),
+            null,
+            com.intellij.icons.AllIcons.Actions.StartDebugger,
+        ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun isSelected(e: AnActionEvent): Boolean = LoreDebugLogging.isEnabled
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            LoreDebugLogging.isEnabled = state
             log.isVerbose = state
         }
     }
