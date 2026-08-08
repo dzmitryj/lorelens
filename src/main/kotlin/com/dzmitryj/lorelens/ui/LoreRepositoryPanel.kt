@@ -61,9 +61,12 @@ class LoreRepositoryPanel(
     private val branchChip = SimpleColoredComponent().apply {
         isOpaque = true
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        // The component pads itself through ipad on top of the border; zeroed
+        // so the padding is applied once and the chip hugs its text.
+        ipad = JBUI.emptyInsets()
         border = JBUI.Borders.compound(
-            JBUI.Borders.customLine(JBColor.border(), 1),
-            JBUI.Borders.empty(1, 6),
+            JBUI.Borders.customLine(JBColor.border(), JBUI.scale(1)),
+            JBUI.Borders.empty(2, 6),
         )
     }
 
@@ -95,24 +98,22 @@ class LoreRepositoryPanel(
             PushAction(),
             ReturnToCurrentAction(),
         )
+        // WEST/CENTER/EAST rather than a FlowLayout: FlowLayout lays children
+        // at preferred width and never shrinks, so at narrow widths the row
+        // hard-clipped into the toolbar. The chip keeps its size, the line
+        // gives way, the toolbar is untouchable.
+        val west = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.emptyRight(6)
+            add(branchChip, BorderLayout.CENTER)
+        }
+        add(west, BorderLayout.WEST)
+        add(line, BorderLayout.CENTER)
         add(
-            JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0)).apply {
-                isOpaque = false
-                add(branchChip)
-                add(line)
-            },
-            BorderLayout.CENTER,
-        )
-        add(
-            JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
-                isOpaque = false
-                add(
-                    ActionManager.getInstance()
-                        .createActionToolbar("LoreLensRepository", actions, true)
-                        .also { it.targetComponent = this@LoreRepositoryPanel }
-                        .component,
-                )
-            },
+            ActionManager.getInstance()
+                .createActionToolbar("LoreLensRepository", actions, true)
+                .also { it.targetComponent = this@LoreRepositoryPanel }
+                .component,
             BorderLayout.EAST,
         )
     }
@@ -124,7 +125,9 @@ class LoreRepositoryPanel(
 
         if (state == null) {
             branchChip.isVisible = false
+            hovered = false
             line.append(LoreLensBundle.message("repo.none"), SimpleTextAttributes.GRAYED_ATTRIBUTES)
+            revalidate()
             return
         }
 
@@ -133,6 +136,7 @@ class LoreRepositoryPanel(
         branchChip.append(state.browsing ?: state.branch, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
         branchChip.append("  ▾", SimpleTextAttributes.GRAYED_ATTRIBUTES)
         repaintChip()
+        revalidate()
 
         if (state.isBrowsing) {
             line.append(
