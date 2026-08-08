@@ -68,24 +68,20 @@ import javax.swing.ListSelectionModel
 class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
 
     private val log = logger<LoreLogTab>()
-    private var graphRows: List<LoreHistoryLanes.Row> = emptyList()
+    private var graphRows: LoreHistoryLanes.Layout = LoreHistoryLanes.Layout.EMPTY
 
     /** The rows currently on screen, which the graph column paints against. */
     private var visible: List<LogRow> = emptyList()
 
-    /** Lane per revision, so the Branch column can match the graph's colours. */
-    private var laneByHash: Map<String, Int> = emptyMap()
-
     private val model = ListTableModel(
         LoreLogColumn.columns(
             LoreGraphColumn(
-                rows = { graphRows },
+                layout = { graphRows },
                 authorOf = { index -> visible.getOrNull(index)?.entry?.author },
                 isMerge = { index -> visible.getOrNull(index)?.entry?.isMerge == true },
                 isHere = { index -> visible.getOrNull(index)?.here == true },
             ),
             rows = { visible },
-            laneOf = { row -> laneByHash[row.entry.revision.hex] },
         ),
         emptyList<LogRow>(),
     )
@@ -240,6 +236,8 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             ApplicationManager.getApplication().invokeLater {
                 all = entries
                 known = found
+                // One palette, fixed to the hierarchy, shared with every view.
+                LoreBranchColours.assign(LoreBranchTree.order(found))
                 loadMergeLabels(roots.firstOrNull(), found)
                 applyFilter(filter.filter ?: "")
                 table.updateColumnSizes()
@@ -487,9 +485,6 @@ class LoreLogTab(private val project: Project) : ChangesViewContentProvider {
             },
             order = LoreBranchTree.order(known),
         )
-        laneByHash = rows.withIndex().associate { (index, row) ->
-            row.entry.revision.hex to graphRows[index].lane
-        }
         visible = rows
         model.items = rows
         // Lane count and chip widths both come from the rows, so the columns

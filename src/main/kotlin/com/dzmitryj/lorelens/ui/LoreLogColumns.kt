@@ -71,9 +71,8 @@ abstract class LoreLogColumn(name: String) : ColumnInfo<LogRow, LogRow>(name) {
         fun columns(
             graph: ColumnInfo<LogRow, *>,
             rows: () -> List<LogRow>,
-            laneOf: (LogRow) -> Int?,
         ): Array<ColumnInfo<LogRow, *>> =
-            arrayOf(graph, RefColumn(rows, laneOf), RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn())
+            arrayOf(graph, RefColumn(rows), RevisionColumn(), DateColumn(), AuthorColumn(), MessageColumn())
     }
 }
 
@@ -174,7 +173,6 @@ private class MessageColumn : LoreLogColumn(LoreLensBundle.message("log.column.m
  */
 private class RefColumn(
     private val rows: () -> List<LogRow>,
-    private val laneOf: (LogRow) -> Int?,
 ) : LoreLogColumn(LoreLensBundle.message("log.column.refs")) {
 
     // Sized to the labels actually on screen. A fixed worst case reserved a
@@ -189,7 +187,7 @@ private class RefColumn(
     override fun getAdditionalWidth(): Int = PADDING
 
     override fun ColoredTableCellRenderer.render(row: LogRow) {
-        val colour = laneOf(row)?.let { LoreGraphColumn.laneColour(it) }
+        val colour = row.branch?.let { LoreBranchColours.colourOf(it) }
 
         if (row.tips.isNotEmpty()) {
             row.tips.forEach { name ->

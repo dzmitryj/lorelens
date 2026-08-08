@@ -297,7 +297,9 @@ class LoreBranchGraphPanel(
 
                 val fromY = yOf(link.from).toDouble()
                 val toY = yOf(link.to).toDouble()
-                g2.color = laneColour(link.to.lane)
+                // An edge belongs to the deeper branch -- the one that was
+                // cut or merged -- same rule the History column draws with.
+                g2.color = laneColour(maxOf(link.from.lane, link.to.lane))
 
                 val turn = (toX - corner).coerceAtLeast(fromX)
                 val down = if (toY > fromY) corner else -corner
@@ -393,7 +395,7 @@ class LoreBranchGraphPanel(
 
         private fun yOf(node: LoreBranchGraphLayout.Node): Int = laneY(node.lane)
 
-        private fun laneColour(lane: Int): Color = LANE_COLOURS[lane % LANE_COLOURS.size]
+        private fun laneColour(lane: Int): Color = LoreBranchColours.colourOf(graph.lanes.getOrNull(lane))
     }
 
     private companion object {
@@ -405,14 +407,5 @@ class LoreBranchGraphPanel(
         const val ZOOM_STEP = 1.1
         const val MIN_ZOOM = 0.25
         const val MAX_ZOOM = 3.0
-
-        val LANE_COLOURS: List<Color> = listOf(
-            JBColor(0x5B8C3E, 0x6FA85A),
-            JBColor(0x6A4BA8, 0x8B6FD0),
-            JBColor(0xA8752A, 0xC79A50),
-            JBColor(0xA83E5B, 0xC76B84),
-            JBColor(0x2A7EA8, 0x54A2C7),
-            JBColor(0x2F7D6A, 0x57A392),
-        )
     }
 }

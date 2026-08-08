@@ -83,7 +83,7 @@ class LoreRealRepoProbeTest {
                 )
             },
             order = emptyList(),
-        )
+        ).rows
         println("PROBE lanes maxWidth=${lanes.maxOfOrNull { it.width }}")
         println("PROBE lanes rows with lines=${lanes.count { it.incoming.isNotEmpty() || it.outgoing.isNotEmpty() || it.through.isNotEmpty() }}")
     }
@@ -110,7 +110,7 @@ class LoreRealRepoProbeTest {
         val lanes = com.dzmitryj.lorelens.ui.LoreHistoryLanes.layout(
             ordered.map { com.dzmitryj.lorelens.ui.LoreHistoryLanes.Input(it.hash, it.parents, it.branch) },
             order = com.dzmitryj.lorelens.model.LoreBranchTree.order(branches),
-        )
+        ).rows
         println("PROBE union maxWidth=${lanes.maxOfOrNull { it.width }}")
         println("PROBE union curves=${lanes.sumOf { row -> (row.incoming + row.outgoing).count { it.from != it.to } }}")
 
@@ -136,7 +136,7 @@ class LoreRealRepoProbeTest {
             com.dzmitryj.lorelens.ui.LoreLogOrder.topological(scoped)
                 .map { com.dzmitryj.lorelens.ui.LoreHistoryLanes.Input(it.hash, it.parents, it.branch) },
             order = com.dzmitryj.lorelens.model.LoreBranchTree.order(branches),
-        )
+        ).rows
         println("PROBE scoped maxWidth=${scopedLanes.maxOfOrNull { it.width }}")
         println(
             "PROBE scoped curves=${scopedLanes.sumOf { row -> (row.incoming + row.outgoing).count { it.from != it.to } }} " +

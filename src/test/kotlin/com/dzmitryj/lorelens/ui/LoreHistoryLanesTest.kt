@@ -6,6 +6,9 @@ import org.junit.Test
 
 class LoreHistoryLanesTest {
 
+    private fun laid(rows: List<LoreHistoryLanes.Input>, order: List<String>, maxLanes: Int = LoreHistoryLanes.MAX_LANES) =
+        LoreHistoryLanes.layout(rows, order, maxLanes).rows
+
     private fun row(hash: String, branch: String?, vararg parents: String) =
         LoreHistoryLanes.Input(hash, parents.toList(), branch)
 
@@ -14,7 +17,7 @@ class LoreHistoryLanesTest {
     /** A lane is a branch: every revision of a branch sits in the same column. */
     @Test
     fun `a branch keeps one lane for the whole view`() {
-        val rows = LoreHistoryLanes.layout(
+        val rows = laid(
             listOf(
                 row("d3", "dev-main", "d2"),
                 row("a2", "dev-alberto", "a1"),
@@ -34,7 +37,7 @@ class LoreHistoryLanesTest {
      */
     @Test
     fun `a merge edge runs in the merged branch's lane`() {
-        val rows = LoreHistoryLanes.layout(
+        val rows = laid(
             listOf(
                 row("m", "dev-main", "d1", "a1"),
                 row("a1", "dev-alberto", "d0"),
@@ -57,7 +60,7 @@ class LoreHistoryLanesTest {
     /** Rows between an edge's ends carry it, so the line never breaks. */
     @Test
     fun `edges land on both row boundaries all the way down`() {
-        val rows = LoreHistoryLanes.layout(
+        val rows = laid(
             listOf(
                 row("m", "dev-main", "d1", "a1"),
                 row("d1", "dev-main", "d0"),
@@ -79,7 +82,7 @@ class LoreHistoryLanesTest {
     /** An edge passing a revision in its own lane threads through the node. */
     @Test
     fun `an edge through an occupied lane threads the node`() {
-        val rows = LoreHistoryLanes.layout(
+        val rows = laid(
             listOf(
                 row("m", "dev-main", "d0", "a2"),
                 row("a1", "dev-alberto"),
@@ -100,7 +103,7 @@ class LoreHistoryLanesTest {
     /** One branch is one line, straight through. */
     @Test
     fun `a single branch stays in lane zero`() {
-        val rows = LoreHistoryLanes.layout(
+        val rows = laid(
             listOf(row("b", "main", "a"), row("a", "main")),
             order,
         )
@@ -112,7 +115,7 @@ class LoreHistoryLanesTest {
     /** Only branches on screen take lanes: absent ones do not leave gaps. */
     @Test
     fun `absent branches do not reserve lanes`() {
-        val rows = LoreHistoryLanes.layout(
+        val rows = laid(
             listOf(row("a1", "dev-alberto"), row("m1", "main")),
             order,
         )
@@ -124,7 +127,7 @@ class LoreHistoryLanesTest {
     @Test
     fun `lanes never exceed the cap`() {
         val names = (1..10).map { "branch$it" }
-        val rows = LoreHistoryLanes.layout(
+        val rows = laid(
             names.map { row("h$it", it) },
             names,
             maxLanes = 3,

@@ -38,12 +38,19 @@ object LoreHistoryLanes {
         val width: Int,
     )
 
+    /** The rows, and which branch each lane belongs to. */
+    data class Layout(val rows: List<Row>, val branches: List<String?>) {
+        companion object {
+            val EMPTY = Layout(emptyList(), emptyList())
+        }
+    }
+
     /**
      * @param order branch names in hierarchy order -- main first, children
      *   after their parents -- which fixes each branch's lane and colour.
      */
-    fun layout(rows: List<Input>, order: List<String>, maxLanes: Int = MAX_LANES): List<Row> {
-        if (rows.isEmpty()) return emptyList()
+    fun layout(rows: List<Input>, order: List<String>, maxLanes: Int = MAX_LANES): Layout {
+        if (rows.isEmpty()) return Layout.EMPTY
 
         val rank = order.withIndex().associate { (index, name) -> name to index }
         // Only branches actually on screen take lanes, so one busy branch does
@@ -52,6 +59,8 @@ object LoreHistoryLanes {
         val laneOf = present.withIndex().associate { (lane, r) -> r to lane }
         fun laneOf(branch: String?): Int =
             (rank[branch]?.let { laneOf[it] } ?: 0).coerceAtMost(maxLanes - 1)
+
+        val laneBranches = present.map { order[it] }.take(maxLanes)
 
         val lanes = rows.map { laneOf(it.branch) }
         val indexOf = rows.withIndex().associate { (index, row) -> row.hash to index }
@@ -83,7 +92,7 @@ object LoreHistoryLanes {
             }
         }
 
-        return rows.indices.map { index ->
+        val laid = rows.indices.map { index ->
             val ins = incoming[index].distinct()
             val outs = outgoing[index].distinct()
             val crossing = through[index].toList()
@@ -96,6 +105,7 @@ object LoreHistoryLanes {
                 width = used.max() + 1,
             )
         }
+        return Layout(laid, laneBranches)
     }
 
     const val MAX_LANES = 8

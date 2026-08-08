@@ -19,7 +19,7 @@ import javax.swing.table.TableCellRenderer
  * and a curve per lane, so a merge reads as two strands joining.
  */
 class LoreGraphColumn(
-    private val rows: () -> List<LoreHistoryLanes.Row>,
+    private val layout: () -> LoreHistoryLanes.Layout,
     private val authorOf: (Int) -> String?,
     private val isMerge: (Int) -> Boolean,
     private val isHere: (Int) -> Boolean,
@@ -29,7 +29,7 @@ class LoreGraphColumn(
 
     override fun getRenderer(item: LogRow?): TableCellRenderer = renderer
 
-    private var measured: List<LoreHistoryLanes.Row>? = null
+    private var measured: LoreHistoryLanes.Layout? = null
     private var lanes = 1
 
     /**
@@ -38,10 +38,10 @@ class LoreGraphColumn(
      * Measured once per layout: the supplier hands back a new list each time.
      */
     override fun getWidth(table: JTable): Int {
-        val laid = rows()
+        val laid = layout()
         if (laid !== measured) {
             measured = laid
-            lanes = (laid.maxOfOrNull { it.width } ?: 1).coerceIn(1, LoreHistoryLanes.MAX_LANES)
+            lanes = (laid.rows.maxOfOrNull { it.width } ?: 1).coerceIn(1, LoreHistoryLanes.MAX_LANES)
         }
         return JBUI.scale(LANE * lanes + MARGIN * 2)
     }
@@ -52,13 +52,23 @@ class LoreGraphColumn(
 
     private val renderer = TableCellRenderer { table, _, selected, _, viewRow, _ ->
         val index = table.convertRowIndexToModel(viewRow)
-        cell.configure(rows().getOrNull(index), authorOf(index), isMerge(index), isHere(index), selected, table)
+        val laid = layout()
+        cell.configure(
+            laid.rows.getOrNull(index),
+            laid.branches,
+            authorOf(index),
+            isMerge(index),
+            isHere(index),
+            selected,
+            table,
+        )
         cell
     }
 
     private class GraphCell : JComponent() {
 
         private var row: LoreHistoryLanes.Row? = null
+        private var branches: List<String?> = emptyList()
         private var author: String? = null
         private var merge: Boolean = false
         private var here: Boolean = false
@@ -69,6 +79,7 @@ class LoreGraphColumn(
 
         fun configure(
             row: LoreHistoryLanes.Row?,
+            branches: List<String?>,
             author: String?,
             merge: Boolean,
             here: Boolean,
@@ -76,6 +87,7 @@ class LoreGraphColumn(
             table: JTable,
         ) {
             this.row = row
+            this.branches = branches
             this.author = author
             this.merge = merge
             this.here = here
@@ -192,28 +204,16 @@ class LoreGraphColumn(
             )
         }
 
-        private fun laneColour(lane: Int): Color = LoreGraphColumn.laneColour(lane)
+        private fun laneColour(lane: Int): Color = LoreBranchColours.colourOf(branches.getOrNull(lane))
 
         /** As round as the room between the lanes and the row edge allows. */
         private fun corner(start: Double, end: Double, room: Double): Double =
             minOf(JBUI.scale(5).toDouble(), Math.abs(end - start) / 2, room)
     }
 
-    companion object {
-        /** Shared with the Branch column, so a label matches its lane's line. */
-        fun laneColour(lane: Int): Color = LANE_COLOURS[lane % LANE_COLOURS.size]
-
-        private const val LANE = 20
-        private const val MARGIN = 8
-        private const val NODE = 7
-
-        private val LANE_COLOURS: List<Color> = listOf(
-            JBColor(0x4A88C7, 0x548AF7),
-            JBColor(0x7A3E9D, 0xB07DD8),
-            JBColor(0x00875A, 0x499C54),
-            JBColor(0xC7752A, 0xD9955B),
-            JBColor(0xB0384A, 0xD1707C),
-            JBColor(0x0F7B8A, 0x4CA6B5),
-        )
+    private companion object {
+        const val LANE = 20
+        const val MARGIN = 8
+        const val NODE = 7
     }
 }
