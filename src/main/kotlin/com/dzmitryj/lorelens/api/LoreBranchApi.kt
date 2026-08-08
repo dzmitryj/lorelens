@@ -18,7 +18,9 @@ import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_resolve_theirs_args
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_merge_unresolve_args_t
 import com.dzmitryj.lorelens.ffi.generated.lore_branch_switch_args_t
 import com.dzmitryj.lorelens.model.LoreBranch
+import com.dzmitryj.lorelens.model.LoreBranchId
 import com.dzmitryj.lorelens.model.LoreBranchLocation
+import com.dzmitryj.lorelens.model.LoreBranchPoint
 import com.dzmitryj.lorelens.model.LoreMergePreview
 import com.dzmitryj.lorelens.model.LoreRevisionId
 import java.lang.foreign.Arena
@@ -56,6 +58,7 @@ object LoreBranchApi {
                     LoreFunctions.lore_branch_create.invokeExact(globals, options, callback) as Int
                 },
                 "create branch $branch",
+                notable = true,
             )
         }
 
@@ -102,6 +105,7 @@ object LoreBranchApi {
                     LoreFunctions.lore_branch_merge_start.invokeExact(globals, options, callback) as Int
                 },
                 "merge $branch",
+                notable = true,
             )
         }
 
@@ -129,6 +133,7 @@ object LoreBranchApi {
                 LoreFunctions.lore_branch_switch.invokeExact(globals, options, callback) as Int
             },
             "switch to $branch",
+            notable = true,
         )
     }
 
@@ -162,6 +167,7 @@ object LoreBranchApi {
                 LoreFunctions.lore_branch_merge_abort.invokeExact(globals, options, callback) as Int
             },
             "abort merge",
+            notable = true,
         )
     }
 
@@ -183,10 +189,12 @@ object LoreBranchApi {
         LoreClient.require(
             EventPump.call(arena) { callback -> invoke(globals, options, callback) },
             operation,
+            notable = true,
         )
     }
 
     private fun BranchListEntryEvent.toModel() = LoreBranch(
+        id = LoreBranchId(id),
         name = name,
         category = category,
         location = LoreBranchLocation.of(location),
@@ -195,6 +203,8 @@ object LoreBranchApi {
         createdMillis = created,
         isCurrent = is_current.toInt() != 0,
         isArchived = archived.toInt() != 0,
-        branchPoints = stack.map { LoreRevisionId(it.revision) },
+        // The stack carries the branch each point came from, not only the
+        // revision; dropping it is what left the hierarchy unknowable.
+        branchPoints = stack.map { LoreBranchPoint(LoreBranchId(it.branch), LoreRevisionId(it.revision)) },
     )
 }

@@ -30,6 +30,7 @@ object LoreSyncApi {
                 LoreFunctions.lore_revision_sync.invokeExact(globals, options, callback) as Int
             },
             "sync",
+            notable = true,
         )
     }
 

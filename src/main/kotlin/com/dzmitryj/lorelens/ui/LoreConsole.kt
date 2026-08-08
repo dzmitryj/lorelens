@@ -40,6 +40,19 @@ class LoreConsoleLog {
     private val entries = ConcurrentLinkedQueue<Entry>()
     private val listeners = mutableListOf<(Entry) -> Unit>()
 
+    /**
+     * Nothing is recorded while no console is open. This is checked on the path
+     * of every Lore call, including the per-file ones, so it has to be cheap
+     * and it has to come first.
+     */
+    @Volatile
+    var isListening: Boolean = false
+        private set
+
+    /** Reads are only worth showing when someone has asked for everything. */
+    @Volatile
+    var isVerbose: Boolean = false
+
     fun command(text: String) = add(Entry(System.currentTimeMillis(), text, Kind.COMMAND))
 
     fun output(text: String) = add(Entry(System.currentTimeMillis(), text, Kind.OUTPUT))
@@ -51,11 +64,13 @@ class LoreConsoleLog {
     @Synchronized
     fun subscribe(listener: (Entry) -> Unit) {
         listeners += listener
+        isListening = true
     }
 
     @Synchronized
     fun unsubscribe(listener: (Entry) -> Unit) {
         listeners -= listener
+        isListening = listeners.isNotEmpty()
     }
 
     fun clear() = entries.clear()
@@ -91,7 +106,7 @@ class LoreConsoleTab(private val project: Project) : ChangesViewContentProvider 
         }
         log.subscribe(listener)
 
-        val actions = DefaultActionGroup(ClearAction(console, log))
+        val actions = DefaultActionGroup(ClearAction(console, log), VerboseAction(log))
 
         content.component = JPanel(BorderLayout()).apply {
             add(
@@ -119,6 +134,25 @@ class LoreConsoleTab(private val project: Project) : ChangesViewContentProvider 
         LoreConsoleLog.Kind.COMMAND -> ConsoleViewContentType.USER_INPUT
         LoreConsoleLog.Kind.ERROR -> ConsoleViewContentType.ERROR_OUTPUT
         LoreConsoleLog.Kind.OUTPUT -> ConsoleViewContentType.NORMAL_OUTPUT
+    }
+
+    /**
+     * File reads run per file and per batch; reporting each one is what made
+     * the console cost the editor real time. Off unless asked for.
+     */
+    private class VerboseAction(private val log: LoreConsoleLog) :
+        com.intellij.openapi.actionSystem.ToggleAction(
+            LoreLensBundle.message("console.verbose"),
+            null,
+            com.intellij.icons.AllIcons.Actions.Show,
+        ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun isSelected(e: AnActionEvent): Boolean = log.isVerbose
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            log.isVerbose = state
+        }
     }
 
     private class ClearAction(private val console: ConsoleView, private val log: LoreConsoleLog) :

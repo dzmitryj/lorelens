@@ -38,6 +38,7 @@ object LoreWriteApi {
                 LoreFunctions.lore_file_stage.invokeExact(globals, options, callback) as Int
             },
             "stage",
+            notable = true,
         )
     }
 
@@ -68,6 +69,7 @@ object LoreWriteApi {
                 LoreFunctions.lore_file_unstage.invokeExact(globals, options, callback) as Int
             },
             "unstage",
+            notable = true,
         )
     }
 
@@ -82,6 +84,7 @@ object LoreWriteApi {
                 LoreFunctions.lore_revision_commit.invokeExact(globals, options, callback) as Int
             },
             "commit",
+            notable = true,
         )
     }
 
@@ -101,6 +104,7 @@ object LoreWriteApi {
                     LoreFunctions.lore_file_reset.invokeExact(globals, options, callback) as Int
                 },
                 "reset",
+                notable = true,
             )
         }
 
@@ -114,6 +118,7 @@ object LoreWriteApi {
                 LoreFunctions.lore_branch_push.invokeExact(globals, options, callback) as Int
             },
             "push",
+            notable = true,
         )
     }
 }

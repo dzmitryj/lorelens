@@ -68,12 +68,15 @@ object LoreClient {
     }
 
     /**
-     * Reports every call to the Lore console before deciding its fate, so the
-     * console shows the operations that ran and not only the ones that broke.
+     * @param notable whether a successful call is worth showing in the console.
+     *   Off by default: status, hash, file writes and diffs run per file and per
+     *   batch, and reporting each one flooded the console -- and through it the
+     *   EDT -- badly enough to slow the editor down. Mutations opt in; failures
+     *   are always reported.
      */
-    fun require(result: LoreResult, what: String): LoreResult {
+    fun require(result: LoreResult, what: String, notable: Boolean = false): LoreResult {
         if (result.succeeded) {
-            LoreOperationLog.succeeded(what)
+            if (notable) LoreOperationLog.succeeded(what)
             return result
         }
 
