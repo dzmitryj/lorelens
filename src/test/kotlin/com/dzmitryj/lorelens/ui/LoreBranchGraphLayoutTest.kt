@@ -124,6 +124,31 @@ class LoreBranchGraphLayoutTest {
         assertEquals("lane", attributed.single().branch)
     }
 
+    /**
+     * A branch can hold revisions this checkout has not synced; the graph is
+     * where you would look to notice that, so the flag has to survive layout
+     * and attribution rather than being dropped on the way through.
+     */
+    @Test
+    fun `unsynced revisions keep their flag`() {
+        val here = LoreBranchGraphLayout.Input(
+            hash = "a", number = 1, branch = "main",
+            parents = emptyList(), author = null, isMerge = false, synced = true,
+        )
+        val ahead = LoreBranchGraphLayout.Input(
+            hash = "b", number = 2, branch = "main",
+            parents = listOf("a"), author = null, isMerge = false, synced = false,
+        )
+
+        val attributed = LoreBranchGraphLayout.attribute(
+            listOf(LoreBranchGraphLayout.Walk("main", branchPoint = 0, revisions = listOf(here, ahead))),
+        )
+        val graph = LoreBranchGraphLayout.layout(attributed, order = listOf("main"))
+
+        assertTrue("the synced revision stays synced", graph.nodeAt("a")!!.synced)
+        assertTrue("the unsynced one stays unsynced", !graph.nodeAt("b")!!.synced)
+    }
+
     @Test
     fun `an empty repository lays out to nothing`() {
         val graph = LoreBranchGraphLayout.layout(emptyList())

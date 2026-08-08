@@ -6,6 +6,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import java.awt.AlphaComposite
 import java.awt.BasicStroke
 import java.awt.BorderLayout
 import java.awt.Color
@@ -219,15 +220,34 @@ class LoreBranchGraphPanel(
         }
 
         private fun paintLaneLines(g2: Graphics2D) {
-            g2.stroke = BasicStroke(JBUI.scale(3) / 2f)
+            val width = JBUI.scale(3) / 2f
 
             graph.lanes.indices.forEach { lane ->
                 val nodes = graph.nodes.filter { it.lane == lane }
                 if (nodes.isEmpty()) return@forEach
 
-                g2.color = laneColour(lane)
                 val y = laneY(lane)
-                g2.drawLine(xOf(nodes.first()), y, xOf(nodes.last()), y)
+                g2.color = laneColour(lane)
+
+                // Solid to where this checkout has reached, dashed past it, so
+                // the part of the branch that exists but is not here reads as
+                // pending rather than as history.
+                val lastSynced = nodes.lastOrNull { it.synced }
+                g2.stroke = BasicStroke(width)
+                g2.drawLine(xOf(nodes.first()), y, xOf(lastSynced ?: nodes.first()), y)
+
+                if (lastSynced !== nodes.last()) {
+                    g2.stroke = BasicStroke(
+                        width,
+                        BasicStroke.CAP_BUTT,
+                        BasicStroke.JOIN_MITER,
+                        10f,
+                        floatArrayOf(JBUI.scale(4).toFloat(), JBUI.scale(4).toFloat()),
+                        0f,
+                    )
+                    g2.drawLine(xOf(lastSynced ?: nodes.first()), y, xOf(nodes.last()), y)
+                    g2.stroke = BasicStroke(width)
+                }
             }
         }
 
@@ -307,6 +327,13 @@ class LoreBranchGraphPanel(
                 val emphasis = node.hash == hovered || node.hash == selected
                 val size = if (emphasis) radius + JBUI.scale(2) else radius
 
+                // Not synced: the revision exists on the branch but not here, so
+                // it is drawn faint rather than solid.
+                val was = g2.composite
+                if (!node.synced) {
+                    g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.4f)
+                }
+
                 g2.color = LoreAuthorColours.colourOf(node.author)
                 g2.fillOval(x - size, y - size, size * 2, size * 2)
 
@@ -333,17 +360,19 @@ class LoreBranchGraphPanel(
                     }
                 }
 
-                if (!showBadges || node.isMerge) return@forEach
+                if (showBadges && !node.isMerge) {
+                    g2.color = JBColor(Color.WHITE, Color.WHITE)
+                    g2.font = JBFont.small()
+                    val initial = LoreAuthorColours.initialOf(node.author)
+                    val metrics = g2.fontMetrics
+                    g2.drawString(
+                        initial,
+                        x - metrics.stringWidth(initial) / 2,
+                        y + metrics.ascent / 2 - JBUI.scale(1),
+                    )
+                }
 
-                g2.color = JBColor(Color.WHITE, Color.WHITE)
-                g2.font = JBFont.small()
-                val initial = LoreAuthorColours.initialOf(node.author)
-                val metrics = g2.fontMetrics
-                g2.drawString(
-                    initial,
-                    x - metrics.stringWidth(initial) / 2,
-                    y + metrics.ascent / 2 - JBUI.scale(1),
-                )
+                g2.composite = was
             }
         }
 

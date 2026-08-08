@@ -20,6 +20,8 @@ object LoreBranchGraphLayout {
         val parents: List<String>,
         val author: String?,
         val isMerge: Boolean,
+        /** False for a revision on the branch that this checkout does not have. */
+        val synced: Boolean = true,
     )
 
     data class Node(
@@ -29,6 +31,7 @@ object LoreBranchGraphLayout {
         val column: Int,
         val author: String?,
         val isMerge: Boolean,
+        val synced: Boolean,
     )
 
     /** A line from one node to another, always drawn parent to child. */
@@ -121,6 +124,7 @@ object LoreBranchGraphLayout {
                 column = column,
                 author = revision.author,
                 isMerge = revision.isMerge,
+                synced = revision.synced,
             )
         }
         val byHash = nodes.associateBy { it.hash }

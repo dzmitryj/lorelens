@@ -3,6 +3,7 @@ package com.dzmitryj.lorelens.ui
 import com.dzmitryj.lorelens.api.LoreHistoryApi
 import com.dzmitryj.lorelens.api.LoreHistoryEntry
 import com.dzmitryj.lorelens.model.LoreBranch
+import com.dzmitryj.lorelens.model.LoreBranchLocation
 import java.nio.file.Path
 
 /**
@@ -26,10 +27,26 @@ object LoreBranchWalks {
     fun attribute(root: Path, branches: List<LoreBranch>, limit: Int): Result {
         val entries = mutableMapOf<String, LoreHistoryEntry>()
 
-        val walks = branches.distinctBy { it.name }.map { branch ->
-            val revisions = runCatching { LoreHistoryApi.history(root, limit, branch = branch.name) }
+        val walks = branches.groupBy { it.name }.map { (name, sides) ->
+            val local = sides.firstOrNull { it.location == LoreBranchLocation.LOCAL }
+            val remote = sides.firstOrNull { it.location == LoreBranchLocation.REMOTE }
+            val branch = local ?: remote ?: sides.first()
+
+            // Walking from the remote tip is what reaches revisions this
+            // checkout has not synced; from the local tip they are invisible.
+            val from = remote?.latest?.takeIf { !it.isNone }?.hex.orEmpty()
+            val revisions = runCatching { LoreHistoryApi.history(root, limit, branch = name, from = from) }
                 .getOrDefault(emptyList())
+                .ifEmpty {
+                    runCatching { LoreHistoryApi.history(root, limit, branch = name) }
+                        .getOrDefault(emptyList())
+                }
             revisions.forEach { entries.putIfAbsent(it.revision.hex, it) }
+
+            // Everything past the local tip is on the branch but not here yet.
+            val syncedThrough = local?.latest
+                ?.let { tip -> revisions.firstOrNull { it.revision.hex == tip.hex }?.number }
+                ?: Long.MAX_VALUE
 
             val branchPoint = branch.branchPoints
                 .mapNotNull { point -> revisions.firstOrNull { it.revision.hex == point.revision.hex }?.number }
@@ -37,16 +54,17 @@ object LoreBranchWalks {
                 ?: 0L
 
             LoreBranchGraphLayout.Walk(
-                branch = branch.name,
+                branch = name,
                 branchPoint = branchPoint,
                 revisions = revisions.map { entry ->
                     LoreBranchGraphLayout.Input(
                         hash = entry.revision.hex,
                         number = entry.number,
-                        branch = branch.name,
+                        branch = name,
                         parents = entry.parents.map { it.hex },
                         author = entry.author,
                         isMerge = entry.isMerge,
+                        synced = entry.number <= syncedThrough,
                     )
                 },
             )
