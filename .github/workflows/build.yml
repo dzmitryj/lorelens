@@ -197,6 +197,14 @@ jobs:
             --jq '.[] | select(.draft == true) | .id' \
             | xargs -r -I '{}' gh api -X DELETE repos/{owner}/{repo}/releases/{}
 
+      # The zip built by the build job, so the draft carries the exact artifact
+      # that passed this run's checks.
+      - name: Download Distribution
+        uses: actions/download-artifact@v7
+        with:
+          name: plugin-distribution
+          path: dist
+
       - name: Create Release Draft
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -208,4 +216,5 @@ jobs:
           gh release create $VERSION \
             --draft \
             --title $VERSION \
-            --notes-file $RELEASE_NOTE
+            --notes-file $RELEASE_NOTE \
+            dist/*.zip
