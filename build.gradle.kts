@@ -99,7 +99,7 @@ intellijPlatform {
         }
 
         vendor {
-            name = "Dimi Mitchell"
+            name = "dzmitryj"
             email = "dimi.mitchell@gmail.com"
             url = "https://github.com/dzmitryj/lore-version-control"
         }
