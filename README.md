@@ -17,11 +17,11 @@
   &nbsp;&middot;&nbsp;
   <a href="https://lore.org">Lore docs</a>
   &nbsp;&middot;&nbsp;
-  <a href="https://github.com/dzmitryj/lore-version-control/releases">Releases</a>
+  <a href="https://github.com/dzmitryj/lorelens/releases">Releases</a>
 </p>
 
 <p>
-  <a href="https://github.com/dzmitryj/lore-version-control/actions/workflows/build.yml"><img alt="Build" src="https://github.com/dzmitryj/lore-version-control/actions/workflows/build.yml/badge.svg"></a>
+  <a href="https://github.com/dzmitryj/lorelens/actions/workflows/build.yml"><img alt="Build" src="https://github.com/dzmitryj/lorelens/actions/workflows/build.yml/badge.svg"></a>
   <a href="https://lore.org"><img alt="liblore v0.8.6" src="https://img.shields.io/badge/liblore-v0.8.6-548AF7"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-informational"></a>
   <img alt="Platform: 2026.1+" src="https://img.shields.io/badge/JetBrains-2026.1%2B-000?logo=jetbrains&logoColor=white">
@@ -180,7 +180,7 @@ Macs are unsupported. Needs a JetBrains IDE on platform 2026.1 or later (build 2
 ### 1. Install the plugin
 
 Until the Marketplace listing is live, download `LoreLens-<version>.zip` from
-[Releases](https://github.com/dzmitryj/lore-version-control/releases) and install it with
+[Releases](https://github.com/dzmitryj/lorelens/releases) and install it with
 **Settings → Plugins → ⚙ → Install Plugin from Disk**, then restart the IDE. The Lore library ships
 inside the zip; there is nothing else to install on the client.
 

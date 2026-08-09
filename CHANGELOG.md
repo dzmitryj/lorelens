@@ -1,5 +1,8 @@
 # LoreLens Changelog
 
+All notable changes to [LoreLens](https://github.com/dzmitryj/lorelens) are documented here.
+Issues and source live at [github.com/dzmitryj/lorelens](https://github.com/dzmitryj/lorelens).
+
 ## [Unreleased]
 
 ### Added

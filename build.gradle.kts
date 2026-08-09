@@ -101,7 +101,7 @@ intellijPlatform {
         vendor {
             name = "dzmitryj"
             email = "dimi.mitchell@gmail.com"
-            url = "https://github.com/dzmitryj/lore-version-control"
+            url = "https://github.com/dzmitryj/lorelens"
         }
 
         description = """
@@ -123,13 +123,18 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            <b>0.8.6.1</b> -- first release, against liblore v0.8.6.
+            <b>0.8.6.1</b> is the first release, against Lore v0.8.6.
             <ul>
-                <li>Full merge and revert workflows, both directions, with conflict resolution</li>
-                <li>Branch-aware history and branch graph with one colour per branch</li>
-                <li>File locks, blame, per-file history following renames</li>
-                <li>Historical content read by content address, correct across moves and deletes</li>
+                <li>History: every branch in one graph, one lane and colour per branch, merge
+                    direction drawn, unsynced revisions marked</li>
+                <li>Branch Graph: the repository as swimlanes, with switch and merge in either
+                    direction from a right-click</li>
+                <li>Merge and revert with preview, conflict resolution, restore and abort</li>
+                <li>File locks with a banner naming the holder, and a status bar widget</li>
+                <li>Blame on the caret line; file history that follows renames exactly</li>
+                <li>Clone with a view filter, sync, and instant status with no filesystem walk</li>
             </ul>
+            Notes and source: <a href="https://github.com/dzmitryj/lorelens">github.com/dzmitryj/lorelens</a>
         """.trimIndent()
     }
 
