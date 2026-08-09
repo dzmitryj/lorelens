@@ -132,7 +132,7 @@ jobs:
 
       - name: Open pull request
         if: steps.target.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: upstream/lore-${{ steps.target.outputs.target }}
           title: 'build(native): bump lore to ${{ steps.target.outputs.target }}'
