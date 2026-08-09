@@ -38,8 +38,9 @@ Issues and source live at [github.com/dzmitryj/lorelens](https://github.com/dzmi
 
 ### Notes
 
-- The plugin version is `<lore version>.<plugin revision>`; the last number is the plugin's own counter
-  and resets when the bundled Lore version moves.
+- The plugin version is `<lore version>.<plugin revision>`: `0.8.6.1` is Lore v0.8.6 plus plugin
+  revision 1. The last number is the plugin's own counter and resets when the bundled Lore version
+  moves.
 - Requires IntelliJ Platform 2026.1 or later, where `java.lang.foreign` is no longer a preview API.
 - Bundles `liblore` for Windows x64, Linux x64, Linux arm64 and macOS arm64. Epic publishes no macOS
   x64 build, so Intel Macs are unsupported.
