@@ -1,5 +1,3 @@
-<!-- Keep a Changelog guide -> https://keepachangelog.com -->
-
 # LoreLens Changelog
 
 ## [Unreleased]
