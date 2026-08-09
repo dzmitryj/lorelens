@@ -13,6 +13,8 @@
 <p>Lore version control in your JetBrains IDE, inspired by GitLens.</p>
 
 <p>
+  <a href="https://plugins.jetbrains.com/plugin/33434-lorelens">Marketplace</a>
+  &nbsp;&middot;&nbsp;
   <a href="https://lore.org">Get Lore</a>
   &nbsp;&middot;&nbsp;
   <a href="https://lore.org">Lore docs</a>
@@ -21,10 +23,11 @@
 </p>
 
 <p>
+  <a href="https://plugins.jetbrains.com/plugin/33434-lorelens"><img alt="JetBrains Marketplace" src="https://img.shields.io/jetbrains/plugin/v/33434?label=marketplace&logo=jetbrains&logoColor=white"></a>
+  <a href="https://plugins.jetbrains.com/plugin/33434-lorelens"><img alt="Downloads" src="https://img.shields.io/jetbrains/plugin/d/33434"></a>
   <a href="https://github.com/dzmitryj/lorelens/actions/workflows/build.yml"><img alt="Build" src="https://github.com/dzmitryj/lorelens/actions/workflows/build.yml/badge.svg"></a>
   <a href="https://lore.org"><img alt="liblore v0.8.6" src="https://img.shields.io/badge/liblore-v0.8.6-548AF7"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-informational"></a>
-  <img alt="Platform: 2026.1+" src="https://img.shields.io/badge/JetBrains-2026.1%2B-000?logo=jetbrains&logoColor=white">
 </p>
 
 <br>
@@ -179,10 +182,11 @@ Macs are unsupported. Needs a JetBrains IDE on platform 2026.1 or later (build 2
 
 ### 1. Install the plugin
 
-Until the Marketplace listing is live, download `LoreLens-<version>.zip` from
-[Releases](https://github.com/dzmitryj/lorelens/releases) and install it with
-**Settings → Plugins → ⚙ → Install Plugin from Disk**, then restart the IDE. The Lore library ships
-inside the zip; there is nothing else to install on the client.
+Install [LoreLens from the JetBrains Marketplace](https://plugins.jetbrains.com/plugin/33434-lorelens):
+**Settings → Plugins → Marketplace**, search for `LoreLens`. Or grab `LoreLens-<version>.zip` from
+[Releases](https://github.com/dzmitryj/lorelens/releases) and use
+**Settings → Plugins → ⚙ → Install Plugin from Disk**. Either way the Lore library ships inside the
+plugin; there is nothing else to install on the client.
 
 You also need a Lore server to talk to. Lore is centralized, and `loreserver` runs with zero
 configuration if you need your own.
