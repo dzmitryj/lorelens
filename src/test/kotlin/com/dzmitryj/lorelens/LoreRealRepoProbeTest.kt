@@ -5,6 +5,9 @@ import com.dzmitryj.lorelens.api.LoreHistoryApi
 import com.dzmitryj.lorelens.api.LoreStatusApi
 import com.dzmitryj.lorelens.model.LoreBranchLocation
 import com.dzmitryj.lorelens.ui.LoreBranchGraphLayout
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.nio.file.Files
@@ -51,6 +54,14 @@ class LoreRealRepoProbeTest {
             println("PROBE merge r${it.number} branch=${it.branch} parents=${it.parents.size}")
         }
         println("PROBE distinct hashes=${attributed.map { it.hash }.distinct().size}")
+
+        assertNotNull("a checkout must report a revision", status)
+        assertTrue("branches must attribute at least one revision", branches.isEmpty() || attributed.isNotEmpty())
+        val names = branches.mapTo(HashSet()) { it.name }
+        assertTrue(
+            "every attribution must name a listed branch",
+            attributed.all { it.branch in names },
+        )
     }
 
     /** What the History tab's walk actually gets: are parents filled per entry? */
@@ -86,6 +97,9 @@ class LoreRealRepoProbeTest {
         ).rows
         println("PROBE lanes maxWidth=${lanes.maxOfOrNull { it.width }}")
         println("PROBE lanes rows with lines=${lanes.count { it.incoming.isNotEmpty() || it.outgoing.isNotEmpty() || it.through.isNotEmpty() }}")
+
+        assertTrue("a reachable tip must walk to at least one entry", history.isNotEmpty())
+        assertEquals("every entry gets a lane row", history.size, lanes.size)
     }
 
     /** The union view: every branch together, ordered, laned. */
@@ -103,6 +117,7 @@ class LoreRealRepoProbeTest {
             input.parents.count { (position[it] ?: Int.MAX_VALUE) < index }
         }
         println("PROBE union parent-above-child=$inversions")
+        assertEquals("topological order must keep every child above its parents", 0, inversions)
 
         val known = ordered.mapTo(HashSet()) { it.hash }
         println("PROBE union dangling=${ordered.flatMap { it.parents }.count { it !in known }}")
@@ -119,6 +134,7 @@ class LoreRealRepoProbeTest {
                 (lower.incoming.map { it.from } + lower.through).toSet()
         }
         println("PROBE union broken boundaries=$broken")
+        assertEquals("edges must be continuous across every row boundary", 0, broken)
 
         // What the History tab shows: the current branch's ancestry only.
         val parents = walked.entries.mapValues { (_, entry) -> entry.parents.map { it.hex } }
@@ -129,6 +145,8 @@ class LoreRealRepoProbeTest {
         val keep = com.dzmitryj.lorelens.ui.LoreLogOrder.reachable(tip, parents)
         val scoped = walked.attributed.filter { it.hash in keep }
         println("PROBE scoped rows=${scoped.size} of ${walked.attributed.size}")
+        assertTrue("scoping to an ancestry must never grow the set", scoped.size <= walked.attributed.size)
+        assertTrue("the tip itself must survive its own scoping", scoped.any { it.hash == tip })
         scoped.groupingBy { it.branch }.eachCount().toSortedMap().forEach { (branch, count) ->
             println("PROBE scoped $branch=$count")
         }
